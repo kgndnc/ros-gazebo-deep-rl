@@ -19,7 +19,7 @@ class NumberPublisher(Node):
 
     def num_publisher_callback(self):
         msg = Int64()
-        msg.data = 42
+        msg.data = 2
 
         self.num_publisher.publish(msg)
 

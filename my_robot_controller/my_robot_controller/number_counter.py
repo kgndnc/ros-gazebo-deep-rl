@@ -12,6 +12,7 @@ from rclpy.node import Node
 from rclpy.node import Parameter
 
 from example_interfaces.msg import Int64
+from example_interfaces.srv import SetBool
 
 
 class NumberCounter(Node):
@@ -24,10 +25,31 @@ class NumberCounter(Node):
         self.number_count_publisher_ = self.create_publisher(
             Int64, "number_count", 10)
 
+        self.reset_counter_service_ = self.create_service(SetBool, "reset_counter",
+                                                          self.callback_reset_counter)
+
         self.counter_ = Int64()
 
+    """
+    (SrvTypeRequest@create_service, SrvTypeResponse@create_service) 
+    -> SrvTypeResponse@create_service
+    """
+
+    def callback_reset_counter(self, request, response):
+        self.get_logger().info(f"Processing request...")
+
+        shouldReset = request.data
+        self.get_logger().info(str(request.data))
+
+        if shouldReset:
+            self.counter_.data = 0
+
+        response.message = "Processed your request."
+        response.success = True
+        return response
+
     def number_callback(self, msg: Int64):
-        self.get_logger().info(f"I received this message: {msg.data}")
+        # self.get_logger().info(f"I received this message: {msg.data}")
         self.counter_.data += msg.data
 
         self.number_count_publisher_.publish(self.counter_)
