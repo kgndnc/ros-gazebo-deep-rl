@@ -33,7 +33,6 @@ class ResetCounterClient(Node):
                 f"Service has been called, here is the response: {str(response)}")
         except Exception as e:
             self.get_logger().error("Service call failed %r" % (e,))
-            pass
 
 
 def main(args=None):
