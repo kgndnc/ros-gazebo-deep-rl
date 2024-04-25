@@ -28,7 +28,8 @@ setup(
             "pose_subscribe = my_robot_controller.pose_subscriber:main",
             "pose_publish = my_robot_controller.pose_publisher:main",
             "number_publish = my_robot_controller.number_publisher:main",
-            "number_count = my_robot_controller.number_counter:main"
+            "number_count = my_robot_controller.number_counter:main",
+            "reset_count = my_robot_controller.reset_counter_client:main"
         ],
     },
 )
