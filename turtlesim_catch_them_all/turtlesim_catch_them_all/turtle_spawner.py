@@ -20,7 +20,12 @@ Both those services are already advertised by the turtlesim_node.
 class TurtleSpawner(Node):
     def __init__(self):
         super().__init__("turtle_spawner")
-        self.create_timer(1.2, self.call_spawn_service)
+
+        # default value 1.0
+        self.declare_parameter('spawn_frequency', 1.0)
+        self.spawn_frequency_ = self.get_parameter('spawn_frequency').value
+
+        self.create_timer(1.0/self.spawn_frequency_, self.call_spawn_service)
 
         self.alive_turtles_ = []
 

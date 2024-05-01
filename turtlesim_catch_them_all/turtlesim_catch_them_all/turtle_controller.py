@@ -17,6 +17,11 @@ class TurtleController(Node):
     def __init__(self):
         super().__init__("turtle_controller")
 
+        # default value True
+        self.declare_parameter('catch_closest_turtle_first', True)
+        self.catch_closest_turtle_first_ = self.get_parameter(
+            'catch_closest_turtle_first').value
+
         self.current_target_: Turtle = None
         self.pose_ = Pose()
 
@@ -89,7 +94,7 @@ class TurtleController(Node):
                 f"Current target set {self.current_target_}")
 
     def pick_turtle(self, turtles: list[Turtle]):
-        pick_closest = True
+        pick_closest = self.catch_closest_turtle_first_
 
         if pick_closest:
             smallest_index = 0
