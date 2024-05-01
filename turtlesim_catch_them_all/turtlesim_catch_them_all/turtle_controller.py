@@ -83,9 +83,31 @@ class TurtleController(Node):
 
     def callback_alive_turtles(self, msg: TurtleArray):
         if not self.current_target_ and msg.turtles:
-            self.current_target_ = random.choice(msg.turtles)
+            # pick one of turtles
+            self.current_target_ = self.pick_turtle(msg.turtles)
             self.get_logger().info(
                 f"Current target set {self.current_target_}")
+
+    def pick_turtle(self, turtles: list[Turtle]):
+        pick_closest = True
+
+        if pick_closest:
+            smallest_index = 0
+            smallest_dist = calculate_distance(
+                self.pose_.x, self.pose_.y, turtles[0].x,  turtles[0].y)
+
+            for i, turtle in enumerate(turtles):
+                dist = calculate_distance(
+                    self.pose_.x, self.pose_.y, turtle.x, turtle.y)
+
+                if dist < smallest_dist:
+                    smallest_dist = dist
+                    smallest_index = i
+
+            return turtles[smallest_index]
+
+        else:
+            return random.choice(turtles)
 
     def call_catch_turtle_service(self, name):
         self.get_logger().info("Calling catch_turtle service")
@@ -102,6 +124,16 @@ class TurtleController(Node):
 
         self.get_logger().info(
             f"Callback catch done here's the result {response.success}")
+
+    # def get_turtles_distance(self,turtle_1: Turtle, turtle_2: Turtle):
+    #     return calculate_distance(turtle_1.x, turtle_1.y, turtle_2.x, turtle_2.y)
+
+
+def calculate_distance(x1, y1, x2, y2):
+    delta_x = x2 - x1
+    delta_y = y2 - y1
+    dist = math.sqrt(delta_x**2 + delta_y**2)
+    return dist
 
 
 def main(args=None):
