@@ -20,7 +20,7 @@ Both those services are already advertised by the turtlesim_node.
 class TurtleSpawner(Node):
     def __init__(self):
         super().__init__("turtle_spawner")
-        self.create_timer(2.0, self.call_spawn_service)
+        self.create_timer(1.2, self.call_spawn_service)
 
         self.alive_turtles_ = []
 
@@ -63,7 +63,8 @@ class TurtleSpawner(Node):
                     index = i
                     break
 
-            del self.alive_turtles_[index]
+            if index != None:
+                del self.alive_turtles_[index]
 
             self.publish_alive_turtles()
 
@@ -89,8 +90,8 @@ class TurtleSpawner(Node):
         # float32 theta
         # string name # Optional.  A unique name will be created and returned if this is empty
 
-        new_turtle = {'x': random.uniform(0.0, 11.0), 'y': random.uniform(
-            0.0, 11.0), 'theta': random.uniform(0.0, pi)}
+        new_turtle = {'x': random.uniform(0.5, 10.5), 'y': random.uniform(
+            0.5, 10.5), 'theta': random.uniform(0.0, pi)}
 
         request = Spawn.Request()
         request.x = new_turtle["x"]
