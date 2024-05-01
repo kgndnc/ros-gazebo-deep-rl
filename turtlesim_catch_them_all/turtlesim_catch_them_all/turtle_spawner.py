@@ -6,6 +6,7 @@ from turtlesim.srv import Spawn
 import random
 from math import pi
 from functools import partial
+from tutorial_interfaces.msg import Turtle, TurtleArray
 
 """
 Call the /spawn service to create a new turtle (choose random coordinates between 0.0 and 11.0 for both x and y),
@@ -17,9 +18,18 @@ Both those services are already advertised by the turtlesim_node.
 class TurtleSpawner(Node):
     def __init__(self):
         super().__init__("turtle_spawner")
+        self.create_timer(2.0, self.call_spawn_service)
+
+        # self.alive_turtles_ = TurtleArray()
         self.alive_turtles_ = []
 
-        self.create_timer(2.0, self.call_spawn_service)
+        self.alive_turtles_publisher_ = self.create_publisher(
+            TurtleArray, "alive_turtles", 10)
+
+    def publish_alive_turtles(self):
+        msg = TurtleArray()
+        msg.turtles = self.alive_turtles_
+        self.alive_turtles_publisher_.publish(msg)
 
     def call_spawn_service(self):
         client = self.create_client(Spawn, "spawn")
@@ -42,19 +52,33 @@ class TurtleSpawner(Node):
         future.add_done_callback(
             partial(self.callback_spawn_done, new_turtle=new_turtle))
 
-    def callback_spawn_done(self, future, new_turtle):
+    def callback_spawn_done(self, future, new_turtle: Turtle):
         try:
             response = future.result()
-            # self.get_logger().info(
-            #     f"/spawn service has been called, here is the response: {str(response)}")
 
-            new_turtle["name"] = response.name
-            self.alive_turtles_.append(new_turtle)
+            added_turtle = Turtle()
+            added_turtle.name = response.name
+            added_turtle.x = new_turtle["x"]
+            added_turtle.y = new_turtle["y"]
+            added_turtle.theta = new_turtle["theta"]
 
-            self.get_logger().info(
-                f"List of alive turtles: {str(self.alive_turtles_)}")
+            self.alive_turtles_.append(added_turtle)
+            self.publish_alive_turtles()
+
         except Exception as e:
             self.get_logger().error("Service call failed %r" % (e,))
+
+    """
+    Publish the list of currently alive turtles with coordinates on a topic /alive_turtles.
+    """
+
+#     def publish_alive_turtles(self):
+#         publisher_ = self.create_publisher(TurtleArray, "alive_turtles", 10)
+#
+#         msg = TurtleArray()
+#         msg = self.alive_turtles_
+#
+#         publisher_.publish(msg)
 
 
 def main(args=None):
