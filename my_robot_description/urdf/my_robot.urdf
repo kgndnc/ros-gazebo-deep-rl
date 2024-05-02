@@ -1,0 +1,112 @@
+<?xml version="1.0"?>
+<robot name="my_robot">
+	<!-- Reference -> http://wiki.ros.org/urdf/XML -->
+	<!--  -->
+	<!-- Everything has to be between this `robot` tag (kind a like <html>) -->
+	<!--  -->
+	<!-- for giving color to a link -->
+	<material name="green">
+		<color rgba="0 0.5 0 1" />
+	</material>
+	<material name="grey">
+		<color rgba="0.5 0.5 0.5 1" />
+	</material>
+	<material name="blue">
+		<color rgba="0 0 0.5 1" />
+	</material>
+	<!-- empty link -->
+	<link name="base_footprint" />
+	<!-- base link is like the chasis of the robot -->
+	<link name="base_link">
+		<visual>
+			<geometry>
+				<!-- Everything in meters (60cm long, 40cm wide, 20cm high) -->
+				<box size="0.6 0.4 0.2" />
+			</geometry>
+			<!-- origin= center of gravity. relative to link origin -->
+			<!-- rpy= roll-pitch-yaw (rotational x-y-z) -->
+			<origin xyz="0 0 0.1" rpy="0 0 0" />
+			<!-- use the material defined above -->
+			<material name="blue" />
+		</visual>
+	</link>
+	<!-- When you have at least 2 links, TF is generated -->
+	<link name="second_link">
+		<visual>
+			<geometry>
+				<cylinder radius="0.1" length="0.2" />
+			</geometry>
+			<origin xyz="0 0 0.1" rpy="0 0 0" />
+			<material name="grey" />
+		</visual>
+	</link>
+	<link name="right_wheel_link">
+		<visual>
+			<geometry>
+				<cylinder radius="0.1" length="0.05" />
+			</geometry>
+			<origin xyz="0 0 0" rpy="1.57 0 0" />
+			<material name="grey" />
+		</visual>
+	</link>
+	<link name="left_wheel_link">
+		<visual>
+			<geometry>
+				<cylinder radius="0.1" length="0.05" />
+			</geometry>
+			<origin xyz="0 0 0" rpy="1.57 0 0" />
+			<material name="grey" />
+		</visual>
+	</link>
+	<link name="caster_wheel_link">
+		<visual>
+			<geometry>
+				<sphere radius="0.05" />
+			</geometry>
+			<origin xyz="0 0 0" rpy="0 0 0" />
+			<material name="grey" />
+		</visual>
+	</link>
+	<!-- We have to provide joints -->
+	<joint name="base_joint" type="fixed">
+		<parent link="base_footprint" />
+		<child link="base_link" />
+		<origin xyz="0 0 0.1" rpy="0 0 0" />
+	</joint>
+	<!-- name= {parentLink}_{childLink}_joint (just a convention to keep things consistent, not a necessity) -->
+	<joint name="base_second_joint" type="revolute">
+		<!-- [type="continuous"]= revolute but with no limits -->
+		<!-- 4 most common joint types= fixed, revolute, continuous, prismatic -->
+		<parent link="base_link" />
+		<child link="second_link" />
+		<!-- ! tip for beginners= put 0 to everything first, then modify by observing the positions at RViz -->
+		<origin xyz="0 0 0.2" rpy="0 0 0" />
+		<!-- 0= no rotation, 1= +rotation, -1= -rotation -->
+		<axis xyz="0 0 1" />
+		<!-- lower, upper limits= required for [type="revolute"] (in radians) -->
+		<limit lower="-1.57" upper="1.57" velocity="100" effort="100" />
+	</joint>
+	<!-- base-right_wheel joint -->
+	<joint name="base_right_wheel_joint" type="continuous">
+		<parent link="base_link" />
+		<child link="right_wheel_link" />
+		<origin xyz="-0.15 -0.225 0" rpy="0 0 0" />
+		<axis xyz="0 1 0" />
+	</joint>
+	<!-- base-left_wheel joint -->
+	<joint name="base_left_wheel_joint" type="continuous">
+		<parent link="base_link" />
+		<child link="left_wheel_link" />
+		<origin xyz="-0.15 0.225 0" rpy="0 0 0" />
+		<axis xyz="0 1 0" />
+	</joint>
+	<joint name="base_caster_wheel_joint" type="fixed">
+		<parent link="base_link" />
+		<child link="caster_wheel_link" />
+		<origin xyz="0.2 0 -0.05" rpy="0 0 0" />
+	</joint>
+</robot>
+<!--
+Tip for getting the origins right= First fix the origin of the joint,
+then fix the visual's origin
+-->
