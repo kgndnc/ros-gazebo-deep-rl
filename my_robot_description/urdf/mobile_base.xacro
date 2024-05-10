@@ -26,6 +26,9 @@
       <!-- use the material defined above -->
       <material name="blue" />
     </visual>
+
+    <!-- inertial tag goes here (required for gazebo) -->
+    <xacro:box_inertia m="5.0" l="${base_length}" w="${base_width}" h="${base_height}" xyz="0.0 0.0 ${base_height/2.0}" rpy="0.0 0.0 0.0" />
   </link>
 
   <!-- When you have at least 2 links, TF is generated -->
@@ -48,6 +51,7 @@
         <origin xyz="0 0 0" rpy="${ pi / 2.0 } 0 0" />
         <material name="grey" />
       </visual>
+      <xacro:cylinder_inertia m="1.0" radius="${wheel_radius}" length="${wheel_length}" xyz="0 0 0" rpy="${ pi / 2.0 } 0 0" />
     </link>
   </xacro:macro>
 
@@ -62,6 +66,7 @@
       <origin xyz="0 0 0" rpy="0 0 0" />
       <material name="grey" />
     </visual>
+    <xacro:sphere_inertia m="0.5" radius="${wheel_radius/2.0}" xyz="0 0 0" rpy="0 0 0" />
   </link>
 
   <!-- We have to provide joints -->
@@ -108,7 +113,6 @@
     <child link="caster_wheel_link" />
     <origin xyz="${base_length / 3.0} 0 ${-wheel_radius/2.0}" rpy="0 0 0" />
   </joint>
-
 
 </robot>
 
