@@ -35,7 +35,8 @@
     </collision>
 
     <!-- inertial tag goes here (required for gazebo) -->
-    <xacro:box_inertia m="5.0" l="${base_length}" w="${base_width}" h="${base_height}" xyz="0.0 0.0 ${base_height/2.0}" rpy="0.0 0.0 0.0" />
+    <!-- increase inertia by multiplying dimensions by a factor (fixes drifting issue in gazebo) -->
+    <xacro:box_inertia m="5.0" l="${4*base_length}" w="${4*base_width}" h="${4*base_height}" xyz="0.0 0.0 ${base_height/2.0}" rpy="0.0 0.0 0.0" />
   </link>
 
   <!-- When you have at least 2 links, TF is generated -->
