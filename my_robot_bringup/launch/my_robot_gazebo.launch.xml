@@ -9,7 +9,9 @@
 
   <!-- Gazebo launch file -->
   <!--  ros2 launch gazebo_ros gazebo.launch.py -->
-  <include file="$(find-pkg-share gazebo_ros)/launch/gazebo.launch.py" />
+  <include file="$(find-pkg-share gazebo_ros)/launch/gazebo.launch.py">
+    <arg name="world" value="$(find-pkg-share my_robot_bringup)/worlds/my_world.sdf" />
+  </include>
 
   <!-- spawn_entity.py node -->
   <!-- spawns the robot that is defined in the /robot_description topic (in urdf format) -->

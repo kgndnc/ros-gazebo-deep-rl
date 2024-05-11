@@ -39,24 +39,6 @@
     <xacro:box_inertia m="5.0" l="${4*base_length}" w="${4*base_width}" h="${4*base_height}" xyz="0.0 0.0 ${base_height/2.0}" rpy="0.0 0.0 0.0" />
   </link>
 
-  <!-- When you have at least 2 links, TF is generated -->
-  <link name="second_link">
-    <visual>
-      <geometry>
-        <cylinder radius="0.1" length="0.2" />
-      </geometry>
-      <origin xyz="0 0 0.1" rpy="0 0 0" />
-      <material name="grey" />
-    </visual>
-
-    <collision>
-      <geometry>
-        <cylinder radius="0.1" length="0.2" />
-      </geometry>
-      <origin xyz="0 0 0.1" rpy="0 0 0" />
-    </collision>
-
-  </link>
 
   <xacro:macro name="wheel_link" params="prefix">
     <link name="${prefix}_wheel_link">
@@ -79,6 +61,7 @@
     </link>
   </xacro:macro>
 
+  <!-- When you have at least 2 links, TF is generated -->
   <xacro:wheel_link prefix="left" />
   <xacro:wheel_link prefix="right" />
 
@@ -109,27 +92,18 @@
   </joint>
 
   <!-- name= {parentLink}_{childLink}_joint (just a convention to keep things consistent, not a necessity) -->
-  <joint name="base_second_joint" type="revolute">
+  <!-- base-right_wheel joint -->
+  <joint name="base_right_wheel_joint" type="continuous">
     <!-- [type="continuous"]= revolute but with no limits -->
     <!-- 4 most common joint types= fixed, revolute, continuous, prismatic -->
     <parent link="base_link" />
-    <child link="second_link" />
-    <!-- ! tip for beginners= put 0 to everything first, then modify by observing the positions at RViz -->
-    <origin xyz="0 0 0.2" rpy="0 0 0" />
-    <!-- 0= no rotation, 1= +rotation, -1= -rotation -->
-    <axis xyz="0 0 1" />
-    <!-- lower, upper limits= required for [type="revolute"] (in radians) -->
-    <limit lower="-${ pi / 2.0 }" upper="${ pi / 2.0 }" velocity="100" effort="100" />
-  </joint>
-
-
-
-  <!-- base-right_wheel joint -->
-  <joint name="base_right_wheel_joint" type="continuous">
-    <parent link="base_link" />
     <child link="right_wheel_link" />
+    <!-- ! tip for beginners= put 0 to everything first, then modify by observing the positions at RViz -->
     <origin xyz="${-base_length / 4.0} ${-(base_width / 2.0 + (wheel_length / 2.0))} 0" rpy="0 0 0" />
+    <!-- 0= no rotation, 1= +rotation, -1= -rotation -->
     <axis xyz="0 1 0" />
+    <!-- lower, upper limits= required for [type="revolute"] (in radians) -->
+    <!-- <limit lower="-${ pi / 2.0 }" upper="${ pi / 2.0 }" velocity="100" effort="100" /> -->
   </joint>
 
   <!-- base-left_wheel joint -->
