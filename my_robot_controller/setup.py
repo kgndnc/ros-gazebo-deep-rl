@@ -29,7 +29,8 @@ setup(
             "pose_publish = my_robot_controller.pose_publisher:main",
             "number_publish = my_robot_controller.number_publisher:main",
             "number_count = my_robot_controller.number_counter:main",
-            "reset_count = my_robot_controller.reset_counter_client:main"
+            "reset_count = my_robot_controller.reset_counter_client:main",
+            "q_learning = my_robot_controller.q_learning:main"
         ],
     },
 )

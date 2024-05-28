@@ -20,4 +20,8 @@
   <!-- Rviz2 with config -->
   <node pkg="rviz2" exec="rviz2" output="screen" args="-d $(var rviz_config_path)" />
 
+
+  <!-- run q_learning node -->
+  <!-- <node pkg="my_robot_controller" exec="q_learning" /> -->
+
 </launch>
