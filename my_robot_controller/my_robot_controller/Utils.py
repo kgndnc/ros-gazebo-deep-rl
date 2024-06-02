@@ -87,3 +87,15 @@ class Utils:
         discrete_y = Utils.discretize_position(
             y, bounds[1], y_grid_size)
         return (discrete_x, discrete_y)
+
+    @staticmethod
+    def calculate_remaining_orientation():
+        return
+        curr_orientation = Utils.euler_from_quaternion(
+            odom_data.pose.pose.orientation)
+        remaining_orientation = self.target_orientation - curr_orientation
+        # Normalize the remaining orientation
+        remaining_orientation = (
+            remaining_orientation + math.pi) % (2 * math.pi) - math.pi
+
+        return remaining_orientation

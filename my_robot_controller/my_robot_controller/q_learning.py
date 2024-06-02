@@ -3,15 +3,29 @@ import pickle
 import random
 import math
 import rclpy
+
 from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from std_srvs.srv import Empty
-
+from tutorial_interfaces.action import Rotate
 
 import numpy as np
 import time
+
+import threading
+import sys
+import warnings
+import functools
+import os
+
+from rclpy.action import ActionServer, CancelResponse, GoalResponse, ActionClient
+from rclpy.callback_groups import ReentrantCallbackGroup
+
+data_folder = os.path.expanduser("~/Repos/bitirme/ros2_ws/src/data/")
+data_name = "Q-Table_small_world"
 
 # TODO: Fix laser min reading problem
 # TODO: add 90-degree turns with action server/client
@@ -20,6 +34,7 @@ LIDAR_SAMPLE_SIZE = 360
 EPISODES = 10000
 
 ANGULAR_VELOCITY = 1.8
+
 LINEAR_VELOCITY = 0.8
 
 REAL_TIME_FACTOR = 10
@@ -27,7 +42,16 @@ REAL_TIME_FACTOR = 10
 
 # bounds
 # x [-10, 47]  y: -19 19
+# my_world.sdf
 bounds = ((-10, 47), (-19, 19))
+# small_world.sdf
+bounds = ((-10, 10), (-10, 14))
+
+"""
+10, 14
+
+"""
+
 x_grid_size = bounds[0][1] - bounds[0][0]  # Define the grid size
 y_grid_size = bounds[1][1] - bounds[1][0]  # Define the grid size
 
@@ -38,9 +62,14 @@ actions = [(-0.5, 0.0), (0.5, 0.0), (0.0, 0.5), (0.0, -0.5)]
 actions = [(LINEAR_VELOCITY, 0.0), (0.0, ANGULAR_VELOCITY),
            (0.0, -ANGULAR_VELOCITY)]
 # actions = [(0.0, ANGULAR_VELOCITY), (0.0, -ANGULAR_VELOCITY)]
+actions = ['FORWARD', "LEFT", "RIGHT"]
 
 
 episode_index = 0
+
+# global variables for sensor data
+laser_ranges = np.zeros(LIDAR_SAMPLE_SIZE)
+odom_data = Odometry()
 
 
 class QLearning:
@@ -63,24 +92,28 @@ class QLearning:
         self.q_table[state][action] = new_q
         print(f"Updated Q-table with reward: {reward}, Q: {new_q}")
 
-    def choose_action(self, state, epsilon=0.1):
+    # def choose_action(self, state, epsilon=0.2):
+    def choose_action(self, state, epsilon=0.0):
         if random.uniform(0, 1) < epsilon or state not in self.q_table:
-            print("choosing random action")
-            return random.choice(self.actions)
-
-        print(
-            f"Choosing from Q-Table. {max(self.q_table[state], key=self.q_table[state].get)}")
-        return max(self.q_table[state], key=self.q_table[state].get)
+            action = random.choice(self.actions)
+            print("choosing random action: " + action)
+            return action
+        else:
+            action = max(self.q_table[state], key=self.q_table[state].get)
+            print(
+                f"Choosing from Q-Table. {action}")
+            return action
 
     def save_q_table(self):
-        with open('Q-Table.pkl', 'wb') as f:
+        with open(data_folder + data_name + '.pkl', 'wb') as f:
             pickle.dump(self.q_table, f)
+            print(f"Q-Table saved to file {f.name}")
 
     def load_q_table(self):
         read_dictionary = {}
 
         try:
-            with open('Q-Table.pkl', 'rb') as f:
+            with open(data_folder + data_name + '.pkl', 'rb') as f:
                 read_dictionary = pickle.load(f)
             print("Loaded Q-Table")
         except:
@@ -217,41 +250,39 @@ class RobotController(Node):
         self.episode_index = 0
 
         self.cmd_vel_pub_ = self.create_publisher(Twist, "cmd_vel", 10)
-        self.create_subscription(LaserScan, "scan", self.scan_callback, 1)
-        self.create_subscription(Odometry, "odom", self.odom_callback, 10)
 
         self.unpause_ = self.create_client(Empty, "/unpause_physics")
         self.pause_ = self.create_client(Empty, "/pause_physics")
 
-#         self.goal_rotation = self.create_service(
-#             Twist, "rotate", self.goal_rotation_service_callback)
-#
-#         self.create_
-
-        self.laser_ranges = np.zeros(self.lidar_sample_size)
-        self.odom_data = Odometry()
         self.previous_action = (0.0, 0.0)
 
-        self.timer_ = self.create_timer(1.0, self.step_callback)
+        self.rotation_active = False
+        self.target_orientation = None
+        self.rotate_timer_ = None
+        self.Kp = 1.3
 
-    def goal_rotation_service_callback(self, msg: Twist):
+        self.timer_ = self.create_timer(2.5 / REAL_TIME_FACTOR, self.step)
 
-        pass
+    def step(self):
+        self.get_logger().info(f"Inside step function")
 
-    def step_callback(self):
         if self.episode_index >= self.episodes:
-            self.timer_.cancel()
-            self.get_logger().info(
-                f"Training completed.\n Q-table: {self.q_learning.q_table}")
-
-            self.q_learning.save_q_table()
+            self.finalize_training()
             return
+
+        if self.episode_index % 100 == 0:
+            self.get_logger().info(f"Saving Q-Table")
+            self.q_learning.save_q_table()
 
         state = self.get_state()
         action = self.q_learning.choose_action(state)
 
-        # sleeps for 1 second in this method
+        self.get_logger().info(f"Taking action...")
+
+        # sleeps for a duration in this method
         self.take_action(action)
+
+        self.get_logger().info(f"Action taken, observing next state...")
 
         # observe the new state
         next_state = self.get_state()
@@ -259,6 +290,110 @@ class RobotController(Node):
         reward = self.get_reward(done)
         self.q_learning.update_q_table(state, action, reward, next_state)
         self.episode_index += 1
+
+    def take_action(self, action):
+        msg = Twist()
+
+        if action == "LEFT" or action == "RIGHT":
+            # Angular movement
+            self.get_logger().info(f"Turning {action.lower()}")
+
+            angle = math.pi / 2 if action == "LEFT" else -math.pi / 2
+
+            # time_required = abs(angle / (self.Kp * ANGULAR_VELOCITY))
+            time_required = abs(angle / ANGULAR_VELOCITY)
+
+            msg.angular.z = ANGULAR_VELOCITY if action == "LEFT" else -ANGULAR_VELOCITY
+            msg.angular.z *= self.Kp
+
+            self.unpause_physics()
+            self.cmd_vel_pub_.publish(msg)
+            time.sleep(time_required / REAL_TIME_FACTOR)
+
+        elif action == "FORWARD":
+            # Linear movement
+
+            msg.linear.x = LINEAR_VELOCITY
+
+            self.unpause_physics()
+            self.cmd_vel_pub_.publish(msg)
+            time.sleep(1.0 / REAL_TIME_FACTOR)
+
+        self.previous_action = action
+
+        # stop the movement and wait for it to stabilize
+        stop_cmd = Twist()
+        stop_cmd.linear.x = 0.0
+        stop_cmd.angular.z = 0.0
+        self.cmd_vel_pub_.publish(stop_cmd)
+        time.sleep(0.5 / REAL_TIME_FACTOR)
+
+        self.pause_physics()
+
+    def get_state(self):
+
+        global odom_data
+        global laser_ranges
+
+        robot_position = Utils.discretize_odom_data(
+            odom_data, bounds, x_grid_size, y_grid_size)
+        orientation = odom_data.pose.pose.orientation
+        robot_orientation = Utils.euler_from_quaternion(orientation)
+        distance_to_goal = Utils.get_distance_to_goal(
+            robot_position, self.goal_position)
+        angle_to_goal = Utils.get_angle_to_goal(
+            robot_position, robot_orientation, self.goal_position)
+        distance_to_goal_disc = Utils.discretize(distance_to_goal, 0, 50, 10)
+        angle_to_goal_disc = Utils.discretize(
+            angle_to_goal, -math.pi, math.pi, 10)
+        robot_orientation_disc = Utils.discretize(
+            robot_orientation, -math.pi, math.pi, 10)
+
+        # state = tuple(laser_ranges) + \
+        #     (distance_to_goal_disc, angle_to_goal_disc)
+
+        min_distances = Utils.get_min_distances_from_slices(
+            laser_ranges, 16)
+
+        # Do not include ranges in state
+        state = tuple(robot_position) + (robot_orientation_disc,) + \
+            (distance_to_goal_disc, angle_to_goal_disc) + tuple(min_distances)
+
+        print(f"State: {state}")
+        return state
+
+    def check_done(self):
+        if Utils.get_distance_to_goal((odom_data.pose.pose.position.x, odom_data.pose.pose.position.y), self.goal_position) < GOAL_REACHED_THRESHOLD:
+            self.get_logger().info(
+                f"Goal reached. Distance to goal: {Utils.get_distance_to_goal((odom_data.pose.pose.position.x, odom_data.pose.pose.position.y), self.goal_position)}")
+            return True
+
+        if min(laser_ranges) < OBSTACLE_COLLISION_THRESHOLD:
+            self.get_logger().info(
+                f"Collision detected. minRange: {min(laser_ranges)}")
+            return True
+
+        return False
+
+    def get_reward(self, done):
+        distance_to_goal = Utils.get_distance_to_goal(
+            (odom_data.pose.pose.position.x, odom_data.pose.pose.position.y), self.goal_position)
+
+        reached_goal = distance_to_goal < GOAL_REACHED_THRESHOLD
+        collision = min(laser_ranges) < OBSTACLE_COLLISION_THRESHOLD
+
+        if done:
+            if reached_goal:
+                return 100
+            if collision:
+                return -100
+
+        distance_reward = (1/distance_to_goal) * 10
+        step_penalty = -1
+
+        reward = distance_reward - step_penalty
+
+        return reward
 
     def unpause_physics(self):
         while not self.unpause_.wait_for_service(timeout_sec=1.0):
@@ -276,108 +411,69 @@ class RobotController(Node):
         except:
             self.get_logger().error("/gazebo/pause_physics service call failed")
 
-    def take_action(self, action):
-        msg = Twist()
-        linear_x, angular_z = action
-        msg.linear.x = linear_x
-        msg.angular.z = angular_z
+    def finalize_training(self):
+        self.timer_.cancel()
+        self.get_logger().info(
+            f"Training completed.\n Q-table: {self.q_learning.q_table}")
+        self.q_learning.save_q_table()
 
-        if linear_x == 0.0 and abs(angular_z) == ANGULAR_VELOCITY:
-            self.cmd_vel_pub_.publish(msg)
-            self.unpause_physics()
-            time.sleep(1.0 / REAL_TIME_FACTOR)
-            stabilize_msg = Twist()
-            stabilize_msg.linear.x = 0.0
-            stabilize_msg.angular.z = 0.0
-            self.cmd_vel_pub_.publish(stabilize_msg)
-            time.sleep(0.7 / REAL_TIME_FACTOR)
-        else:
-            self.cmd_vel_pub_.publish(msg)
-            self.unpause_physics()
-            time.sleep(1 / REAL_TIME_FACTOR)
+# TODO: get ros2 workspace location from command line
 
-        self.previous_action = action
 
-        self.pause_physics()
-
-    def get_state(self):
-        x = self.odom_data.pose.pose.position.x
-        y = self.odom_data.pose.pose.position.y
-        robot_position = Utils.discretize_odom_data(
-            self.odom_data, bounds, x_grid_size, y_grid_size)
-        orientation = self.odom_data.pose.pose.orientation
-        robot_orientation = Utils.euler_from_quaternion(orientation)
-        distance_to_goal = Utils.get_distance_to_goal(
-            robot_position, self.goal_position)
-        angle_to_goal = Utils.get_angle_to_goal(
-            robot_position, robot_orientation, self.goal_position)
-        distance_to_goal_disc = Utils.discretize(distance_to_goal, 0, 50, 10)
-        angle_to_goal_disc = Utils.discretize(
-            angle_to_goal, -math.pi, math.pi, 10)
-
-        # state = tuple(self.laser_ranges) + \
-        #     (distance_to_goal_disc, angle_to_goal_disc)
-
-        min_distances = Utils.get_min_distances_from_slices(
-            self.laser_ranges, 16)
-
-        # Do not include ranges in state
-        state = tuple(robot_position) + \
-            (distance_to_goal_disc, angle_to_goal_disc) + tuple(min_distances)
-
-        print(f"State: {state}")
-        return state
-
-    def check_done(self):
-        if Utils.get_distance_to_goal((self.odom_data.pose.pose.position.x, self.odom_data.pose.pose.position.y), self.goal_position) < GOAL_REACHED_THRESHOLD:
-            self.get_logger().info(
-                f"Goal reached. Distance to goal: {Utils.get_distance_to_goal((self.odom_data.pose.pose.position.x, self.odom_data.pose.pose.position.y), self.goal_position)}")
-            return True
-
-        if min(self.laser_ranges) < OBSTACLE_COLLISION_THRESHOLD:
-            self.get_logger().info(
-                f"Collision detected. minRange: {min(self.laser_ranges)}")
-            return True
-
-        return False
-
-    def get_reward(self, done):
-        distance_to_goal = Utils.get_distance_to_goal(
-            (self.odom_data.pose.pose.position.x, self.odom_data.pose.pose.position.y), self.goal_position)
-
-        reached_goal = distance_to_goal < GOAL_REACHED_THRESHOLD
-        collision = min(self.laser_ranges) < OBSTACLE_COLLISION_THRESHOLD
-
-        if done:
-            if reached_goal:
-                return 100
-            if collision:
-                return -100
-
-        distance_reward = (1/distance_to_goal) * 10
-        step_penalty = -1
-
-        reward = distance_reward - step_penalty
-
-        return reward
-
-    def scan_callback(self, msg: LaserScan):
-        self.laser_ranges = msg.ranges
+class OdomSubscriber(Node):
+    def __init__(self):
+        super().__init__('odom_subscriber')
+        self.subscription = self.create_subscription(
+            Odometry,
+            '/odom',
+            self.odom_callback,
+            10)
+        self.subscription
 
     def odom_callback(self, msg: Odometry):
-        self.odom_data = msg
+        global odom_data
+        odom_data = msg
+
+
+class ScanSubscriber(Node):
+    def __init__(self):
+        super().__init__('scan_subscriber')
+        self.subscription = self.create_subscription(
+            LaserScan, "scan", self.scan_callback, 10)
+        self.subscription
+
+    def scan_callback(self, msg: LaserScan):
+        # self.get_logger().info(f"Updating scan data...")
+        global laser_ranges
+        laser_ranges = msg.ranges
 
 
 def main(args=None):
     rclpy.init(args=args)
 
-    q_learning = QLearning(actions=actions)
+    # my_world.sdf
     goal_position = (43.618300, -0.503538)
 
-    node = RobotController(q_learning, goal_position,
-                           LIDAR_SAMPLE_SIZE, EPISODES)
+    # small_world.sdf
+    goal_position = (-8.061270, 1.007540)
 
-    rclpy.spin(node)
+    q_learning = QLearning(actions=actions)
+
+    robot_controller = RobotController(q_learning, goal_position,
+                                       LIDAR_SAMPLE_SIZE, EPISODES)
+    odom_subscriber = OdomSubscriber()
+    scan_subscriber = ScanSubscriber()
+
+    executor = MultiThreadedExecutor()
+    executor.add_node(odom_subscriber)
+    executor.add_node(scan_subscriber)
+    executor.add_node(robot_controller)
+
+    executor_thread = threading.Thread(target=executor.spin, daemon=False)
+    # executor_thread.start()
+    executor_thread.run()
+
+    # executor.spin()
     rclpy.shutdown()
 
 

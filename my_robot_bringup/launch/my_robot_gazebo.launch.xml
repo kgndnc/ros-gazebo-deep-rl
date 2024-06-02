@@ -5,17 +5,29 @@
   <!-- Robot state publisher node  -->
   <node pkg="robot_state_publisher" exec="robot_state_publisher">
     <param name="robot_description" value="$(command 'xacro $(var urdf_path)')" />
+    <param name="use_sim_time" value="true" />
   </node>
 
   <!-- Gazebo launch file -->
   <!--  ros2 launch gazebo_ros gazebo.launch.py -->
   <include file="$(find-pkg-share gazebo_ros)/launch/gazebo.launch.py">
-    <arg name="world" value="$(find-pkg-share my_robot_bringup)/worlds/my_world.sdf" />
+    <arg name="world" value="$(find-pkg-share my_robot_bringup)/worlds/small_world.sdf" />
+    <!-- <arg name="world" value="$(find-pkg-share my_robot_bringup)/worlds/my_world.sdf" /> -->
   </include>
 
   <!-- spawn_entity.py node -->
   <!-- spawns the robot that is defined in the /robot_description topic (in urdf format) -->
-  <node pkg="gazebo_ros" exec="spawn_entity.py" args="-topic robot_description -entity my_robot" />
+  <!-- spawn_entity.py node for the first robot -->
+  <node pkg="gazebo_ros" exec="spawn_entity.py" args="-topic robot_description -robot_namespace robot_1 -entity my_robot_1 -x 0 -y 0 -z 0">
+  </node>
+
+  <!-- spawn_entity.py node for the second robot -->
+  <node pkg="gazebo_ros" exec="spawn_entity.py" args="-topic robot_description -robot_namespace robot_2 -entity my_robot_2 -x 2 -y 0 -z 0">
+  </node>
+
+
+  <node pkg="gazebo_ros" exec="spawn_entity.py" args="-topic robot_description -robot_namespace robot_3 -entity my_robot_3  -x 4 -y 0 -z 0">
+  </node>
 
   <!-- Rviz2 with config -->
   <node pkg="rviz2" exec="rviz2" output="screen" args="-d $(var rviz_config_path)" />
