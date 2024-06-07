@@ -171,7 +171,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /scan
+        Value: /robot_1/scan
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -239,7 +239,7 @@ Visualization Manager:
       Pitch: 0.11039836704730988
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.303580284118652
+      Yaw: 5.393582344055176
     Saved: ~
 Window Geometry:
   Displays:
