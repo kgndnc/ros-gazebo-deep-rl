@@ -31,7 +31,8 @@ data_name = "Q-Table_small_world_w_rooms"
 
 
 LIDAR_SAMPLE_SIZE = 181
-EPISODES = 400_000
+EPISODES = 500_000
+
 ANGULAR_VELOCITY = 1.8
 LINEAR_VELOCITY = 0.9
 REAL_TIME_FACTOR = 25
@@ -600,6 +601,17 @@ class RobotController(Node):
             plt.savefig(data_folder + "figures/reward_" +
                         str(self.robot_index) + '.png')
             plt.close()
+
+            with open(data_folder + "rewards_array" + '.pkl', 'wb') as f:
+                pickle.dump(moving_avg_rewards, f)
+
+            with open(data_folder + "rewards.txt", "w") as file:
+                # Iterate over the list and write each item to the file
+                file.write("[ ")
+                for item in moving_avg_rewards:
+                    # Convert each item to a string
+                    file.write(str(item) + ",")
+                file.write(" ]")
 
 
 class OdomSubscriber(Node):
