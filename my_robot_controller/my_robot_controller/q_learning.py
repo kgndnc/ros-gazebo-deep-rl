@@ -296,10 +296,11 @@ class RobotController(Node):
     done = False
     is_physics_paused = False
 
-    def __init__(self, q_learning: QLearning, goal_position, namespace: str, robot_index: int, lidar_sample_size=360, episodes=10000):
+    def __init__(self, q_learning: QLearning, goal_position, namespace: str, robot_index: int, lidar_sample_size=360, episodes=10000, episode_index=0):
         # super().__init__("robot_controller_" + namespace)
-        super().__init__("robot_controller_" + namespace,
-                         cli_args=["--ros-args", "--remap", "~/out:=scan_laser"], namespace=namespace)
+        super().__init__("robot_controller_" + namespace, namespace=namespace)
+        RobotController.episode_index = episode_index
+
         self.q_learning = q_learning
         self.goal_position = goal_position
         self.lidar_sample_size = lidar_sample_size
@@ -326,6 +327,7 @@ class RobotController(Node):
         self.Kp = 1.3
 
         self.timer_ = self.create_timer(2.5 / REAL_TIME_FACTOR, self.step)
+        # self.timer_ = self.create_timer(1.5 / REAL_TIME_FACTOR, self.step)
 
     def step(self):
         # self.get_logger().info(f"Inside step function")
@@ -663,7 +665,9 @@ def main(args=None):
     for i, namespace in enumerate(namespaces):
         robot_index = i
         robot_controller = RobotController(q_learning, goal_position, namespace, robot_index,
-                                           LIDAR_SAMPLE_SIZE, EPISODES)
+                                           episode_index=95_000,
+                                           lidar_sample_size=LIDAR_SAMPLE_SIZE,
+                                           episodes=EPISODES)
         odom_subscriber = OdomSubscriber(namespace, robot_index)
         scan_subscriber = ScanSubscriber(namespace, robot_index)
 
