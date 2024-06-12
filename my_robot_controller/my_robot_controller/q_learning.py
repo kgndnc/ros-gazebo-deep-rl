@@ -10,6 +10,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from geometry_msgs.msg import Twist
+import rclpy.waitable
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from std_srvs.srv import Empty
@@ -19,6 +20,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import time
+from datetime import timedelta
 
 import threading
 
@@ -27,15 +29,15 @@ matplotlib.use('agg')
 
 
 data_folder = os.path.expanduser("~/Repos/bitirme/ros2_ws/src/data/")
-data_name = "Q-Table_small_world_w_rooms"
+data_name = "Q-Table_small_world_w_rooms_v4"
 
 
 LIDAR_SAMPLE_SIZE = 181
-EPISODES = 500_000
+EPISODES = 200_000
 
 ANGULAR_VELOCITY = 1.8
 LINEAR_VELOCITY = 0.9
-REAL_TIME_FACTOR = 25
+REAL_TIME_FACTOR = 77
 
 
 # for every ... episode save to file
@@ -50,11 +52,6 @@ bounds = ((-10, 47), (-19, 19))
 bounds = ((-10, 10), (-10, 14))
 
 
-"""
-10, 14
-
-"""
-
 x_grid_size = bounds[0][1] - bounds[0][0]  # Define the grid size
 y_grid_size = bounds[1][1] - bounds[1][0]  # Define the grid size
 
@@ -63,13 +60,17 @@ max_distance_to_goal = math.floor(
     math.sqrt(x_grid_size**2 + y_grid_size**2) - 0.6)
 
 
-actions = ['FORWARD', "LEFT", "RIGHT"]
+actions = ['FORWARD', "LEFT", "RIGHT", "STAY"]
 
 
 # global variables for sensor data
 agent_count = 3
 laser_ranges = np.array([np.zeros(LIDAR_SAMPLE_SIZE)
                         for _ in range(agent_count)])
+
+
+epsilon_discount = 0.99996
+epsilon_discount = 0.999986
 
 
 odom_data = np.array([Odometry() for _ in range(agent_count)])
@@ -79,7 +80,7 @@ odom_data = np.array([Odometry() for _ in range(agent_count)])
 
 
 class QLearning:
-    def __init__(self, actions, alpha=0.1, gamma=0.9, epsilon=None, _save_q_table=True, _load_q_table=True):
+    def __init__(self, actions, alpha=0.1, gamma=0.9, epsilon=0.9, _save_q_table=True, _load_q_table=True):
         self.actions = actions
         self.alpha = alpha
         self.gamma = gamma
@@ -88,13 +89,6 @@ class QLearning:
         self._load_q_table = _load_q_table
         self.q_table = self.load_q_table()
         self.lock = threading.Lock()  # Create a threading lock
-
-        # epsilon related stuff
-        self.epsilon_start = 1.0
-        self.epsilon_end = 0.1
-        # Control the decay over 3/5 of the training
-        self.decay_rate = np.log(
-            self.epsilon_start / self.epsilon_end) / (0.6 * EPISODES)
 
     def update_q_table(self, state, action, reward, next_state):
         with self.lock:
@@ -110,15 +104,9 @@ class QLearning:
             self.q_table[state][action] = new_q
             # print(f"Updated Q-table with reward: {reward}, Q: {new_q}")
 
-    def get_epsilon(self, episode):
-        if self.epsilon is not None:
-            return self.epsilon
-
-        return self.epsilon_end + (self.epsilon_start - self.epsilon_end) * np.exp(-self.decay_rate * episode)
-
     def choose_action(self, state, episode_index: int):
 
-        if random.uniform(0, 1) < self.get_epsilon(episode_index) or state not in self.q_table:
+        if random.uniform(0, 1) < self.epsilon or state not in self.q_table:
             action = random.choice(self.actions)
             # print("choosing random action: " + action)
             return action
@@ -136,6 +124,7 @@ class QLearning:
             with open(data_folder + data_name + '.pkl', 'wb') as f:
                 pickle.dump(self.q_table, f)
                 print(f"Q-Table saved to file {f.name}")
+                RobotController.done = False  # may cause a bug
             # Release the lock automatically when exiting the with statement
 
     def load_q_table(self):
@@ -240,26 +229,16 @@ class Utils:
         return index
 
     @staticmethod
-    def discretize_odom_data(odom, bounds, x_grid_size, y_grid_size):
-        """
-        Discretizes the odometry data into a discrete state.
+    def get_position_from_odom_data(odom):
 
-        Args:
-        - odom: The odometry message containing the position.
-        - bounds: A tuple ((min_x, max_x), (min_y, max_y)) representing the bounds of the environment.
-        - grid_size: The number of discrete steps in the grid.
-
-        Returns:
-        - A tuple (discrete_x, discrete_y) representing the discrete state.
-        """
         x = odom.pose.pose.position.x
         y = odom.pose.pose.position.y
 
-        discrete_x = Utils.discretize_position(
-            x, bounds[0], x_grid_size*2)
-        discrete_y = Utils.discretize_position(
-            y, bounds[1], y_grid_size*2)
-        return (discrete_x, discrete_y)
+        # discrete_x = Utils.discretize_position(
+        #     x, bounds[0], x_grid_size*2)
+        # discrete_y = Utils.discretize_position(
+        #     y, bounds[1], y_grid_size*2)
+        return (x, y)
 
     @staticmethod
     def get_min_distances_from_slices(laser_data, num_slices=4):
@@ -326,8 +305,13 @@ class RobotController(Node):
         self.rotate_timer_ = None
         self.Kp = 1.3
 
+        self.start_time = time.time()
         self.timer_ = self.create_timer(2.5 / REAL_TIME_FACTOR, self.step)
         # self.timer_ = self.create_timer(1.5 / REAL_TIME_FACTOR, self.step)
+
+        # Initialize previous distance to goal
+        self.prev_distance_to_goal = Utils.get_distance_to_goal(
+            self.get_robot_position(), self.goal_position)
 
     def step(self):
         # self.get_logger().info(f"Inside step function")
@@ -341,6 +325,7 @@ class RobotController(Node):
             return
 
         if (RobotController.episode_index) % SAVE_INTERVAL == 0 and self.last_agent:
+            RobotController.done = True  # may cause a bug
             self.get_logger().info(f"Saving Q-Table")
             RobotController.episode_index += 1
             self.q_learning.save_q_table()
@@ -357,25 +342,25 @@ class RobotController(Node):
         # observe the new state
         next_state = self.get_state()
         RobotController.done = self.check_done()
-        reward = self.get_reward(RobotController.done)
+        reward = self.get_reward(RobotController.done, action)
+        self.total_reward_during_episode += reward
         self.q_learning.update_q_table(state, action, reward, next_state)
         self.step_counter += 1
 
         if RobotController.done:
-            self.total_reward_during_episode += reward
             self.reset_environment()
             return
 
         if self.step_counter >= 1000:  # End episode if step limit is reached
             RobotController.done = True
             self.get_logger().info(f"Step limit reached. Ending episode.")
-            self.total_reward_during_episode += reward
             self.reset_environment()
             return
 
         # self.get_logger().info(f"Episode: {RobotController.episode_index}")
 
     def reset_environment(self):
+
         global odom_data
         global laser_ranges
 
@@ -399,10 +384,16 @@ class RobotController(Node):
 
         RobotController.done = False  # Reset global done flag
         self.episode_rewards.append(self.total_reward_during_episode)
+        current_time = time.time() - self.start_time
+        print(
+            f"EP: {RobotController.episode_index} - [alpha: {self.q_learning.alpha} - gamma: {self.q_learning.gamma} - epsilon: {self.q_learning.epsilon:1.2f}] - Reward: {self.total_reward_during_episode} \tTime: {timedelta(seconds=current_time)}")
         self.total_reward_during_episode = 0
         RobotController.episode_index += 1
-        self.get_logger().info(
-            f"Environment reset for new episode\nCurrent episode: {RobotController.episode_index}")
+        self.q_learning.epsilon *= epsilon_discount
+
+        # Reset the previous distance to the goal
+        self.prev_distance_to_goal = Utils.get_distance_to_goal(
+            self.get_robot_position(), self.goal_position)
 
     def take_action(self, action):
         msg = Twist()
@@ -418,6 +409,7 @@ class RobotController(Node):
 
             msg.angular.z = ANGULAR_VELOCITY if action == "LEFT" else -ANGULAR_VELOCITY
             msg.angular.z *= self.Kp
+            msg.linear.x = 0.15
 
             if RobotController.is_physics_paused:
                 self.unpause_physics()
@@ -434,6 +426,8 @@ class RobotController(Node):
                 self.unpause_physics()
 
             self.cmd_vel_pub_.publish(msg)
+            time.sleep(1.0 / REAL_TIME_FACTOR)
+        elif action == "STAY":
             time.sleep(1.0 / REAL_TIME_FACTOR)
 
         self.previous_action = action
@@ -454,20 +448,25 @@ class RobotController(Node):
         global odom_data
         global laser_ranges
 
-        robot_position = Utils.discretize_odom_data(
-            odom_data[self.robot_index], bounds, x_grid_size, y_grid_size)
+        robot_position = Utils.get_position_from_odom_data(
+            odom_data[self.robot_index])
         orientation = odom_data[self.robot_index].pose.pose.orientation
         robot_orientation = Utils.euler_from_quaternion(orientation)
         distance_to_goal = Utils.get_distance_to_goal(
             robot_position, self.goal_position)
+
+        # if self.last_agent:
+        #     print(f"Robot position = {robot_position}")
+
         angle_to_goal = Utils.get_angle_to_goal(
             robot_position, robot_orientation, self.goal_position)
+        # 18 artırılabilir
         distance_to_goal_disc = Utils.discretize(
             distance_to_goal, 0, max_distance_to_goal, 18)
         angle_to_goal_disc = Utils.discretize(
-            angle_to_goal, -math.pi, math.pi, 8)
+            angle_to_goal, -math.pi, math.pi, 18)
         robot_orientation_disc = Utils.discretize(
-            robot_orientation, -math.pi, math.pi, 10)
+            robot_orientation, -math.pi, math.pi, 8)
 
         # state = tuple(laser_ranges[self.robot_index]) + \
         #     (distance_to_goal_disc, angle_to_goal_disc)
@@ -502,8 +501,7 @@ class RobotController(Node):
         # Calculate distances and relative angles to other robots
         for i, odom in enumerate(odom_data):
             if i != self.robot_index:  # Skip the current robot
-                other_robot_position = Utils.discretize_odom_data(
-                    odom, bounds, x_grid_size, y_grid_size)
+                other_robot_position = Utils.get_position_from_odom_data(odom)
 
                 # Calculate distance to the other robot
                 distance_to_robot_i = Utils.get_distance_between_points(
@@ -526,7 +524,9 @@ class RobotController(Node):
         state = (distance_to_goal_disc, angle_to_goal_disc, robot_orientation_disc,
                  collision) + tuple(info_about_other_robots)
 
-        # print(f"State for {self.robot_index+1}: {state}")
+        # if self.last_agent:
+        #     print(f"State for {self.robot_index+1}: {state}")
+
         return state
 
     def check_done(self):
@@ -536,13 +536,13 @@ class RobotController(Node):
             return True
 
         if min(laser_ranges[self.robot_index]) < OBSTACLE_COLLISION_THRESHOLD:
-            self.get_logger().info(
-                f"Collision detected. minRange: {min(laser_ranges[self.robot_index])}")
+            # self.get_logger().info(
+            #     f"Collision detected. minRange: {min(laser_ranges[self.robot_index])}")
             return True
 
         return False
 
-    def get_reward(self, done):
+    def get_reward(self, done, action):
         distance_to_goal = Utils.get_distance_to_goal(
             (odom_data[self.robot_index].pose.pose.position.x, odom_data[self.robot_index].pose.pose.position.y), self.goal_position)
 
@@ -552,16 +552,30 @@ class RobotController(Node):
 
         if done:
             if reached_goal:
-                return 100
+                return 200
             if collision:
-                return -100
+                return -200
 
-        distance_reward = (1/distance_to_goal) * 10
-        step_penalty = -1
+        current_distance_to_goal = Utils.get_distance_to_goal(
+            self.get_robot_position(), self.goal_position)
 
-        reward = distance_reward - step_penalty
+        # Reward for getting closer to the goal
+        if current_distance_to_goal < self.prev_distance_to_goal:
+            reward = 10  # Positive reward
+        else:
+            reward = -10  # Penalty for moving away from the goal
+
+        # Update the previous distance to the goal
+        self.prev_distance_to_goal = current_distance_to_goal
+
+        # Small negative reward for each step taken to encourage faster completion
+        reward -= 1
 
         return reward
+
+    def get_robot_position(self):
+        global odom_data
+        return Utils.get_position_from_odom_data(odom_data[self.robot_index])
 
     def unpause_physics(self):
         return
@@ -659,13 +673,13 @@ def main(args=None):
     executor = MultiThreadedExecutor()
 
     # if not in training set epsilon as 0.0
-    q_learning = QLearning(actions=actions, alpha=0.1,
+    q_learning = QLearning(actions=actions, alpha=0.7, epsilon=0.315,
                            _save_q_table=True, _load_q_table=True)
 
     for i, namespace in enumerate(namespaces):
         robot_index = i
         robot_controller = RobotController(q_learning, goal_position, namespace, robot_index,
-                                           episode_index=95_000,
+                                           episode_index=75_020,
                                            lidar_sample_size=LIDAR_SAMPLE_SIZE,
                                            episodes=EPISODES)
         odom_subscriber = OdomSubscriber(namespace, robot_index)

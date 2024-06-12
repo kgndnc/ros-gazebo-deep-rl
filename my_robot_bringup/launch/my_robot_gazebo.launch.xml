@@ -15,8 +15,8 @@
   <include file="$(find-pkg-share gazebo_ros)/launch/gazebo.launch.py">
     <arg name="world" value="$(find-pkg-share my_robot_bringup)/worlds/small_world.sdf" />
     <arg name="use_sim_time" value="true"/>
-    <!-- <arg name="gui" value="false"/>
-    <arg name="headless" value="true"/> -->
+    <arg name="gui" value="false"/>
+    <arg name="headless" value="true"/>
   </include>
 
   <!-- spawn_entity.py node -->
@@ -37,7 +37,7 @@
   </node>
 
   <!-- Rviz2 with config -->
-  <node pkg="rviz2" exec="rviz2" output="screen" args="-d $(var rviz_config_path)" />
+  <!-- <node pkg="rviz2" exec="rviz2" output="screen" args="-d $(var rviz_config_path)" /> -->
 
 
   <!-- run q_learning node -->

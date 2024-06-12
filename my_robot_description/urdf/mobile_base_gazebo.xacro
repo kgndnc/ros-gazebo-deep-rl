@@ -25,7 +25,7 @@
     <plugin name="diff_drive_controller" filename="libgazebo_ros_diff_drive.so">
 
       <!-- Update rate in Hz -->
-      <update_rate>50</update_rate>
+      <update_rate>1000</update_rate>
 
       <!-- wheels -->
       <left_joint>base_left_wheel_joint</left_joint>
