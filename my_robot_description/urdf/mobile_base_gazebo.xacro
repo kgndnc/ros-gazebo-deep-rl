@@ -25,7 +25,7 @@
     <plugin name="diff_drive_controller" filename="libgazebo_ros_diff_drive.so">
 
       <!-- Update rate in Hz -->
-      <update_rate>1000</update_rate>
+      <update_rate>50</update_rate>
 
       <!-- wheels -->
       <left_joint>base_left_wheel_joint</left_joint>
@@ -36,8 +36,8 @@
       <wheel_diameter>${wheel_radius * 2}</wheel_diameter>
 
       <!-- limits -->
-      <!-- <max_wheel_torque>20</max_wheel_torque>
-      <max_wheel_acceleration>1.0</max_wheel_acceleration> -->
+      <max_wheel_torque>20</max_wheel_torque>
+      <max_wheel_acceleration>1.8</max_wheel_acceleration>
 
       <!-- input -->
       <!-- send commands to this topic, robot node will listen to this topic -->
@@ -48,8 +48,12 @@
       <publish_odom_tf>true</publish_odom_tf>
       <publish_wheel_tf>true</publish_wheel_tf>
 
+      <robotNamespace/>
+      <always_on>1</always_on>
+
       <odometry_topic>odom</odometry_topic>
       <odometry_frame>odom</odometry_frame>
+      <!-- <odometrySource>world</odometrySource> -->
       <robot_base_frame>base_footprint</robot_base_frame>
 
     </plugin>

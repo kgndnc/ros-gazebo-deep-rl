@@ -30,7 +30,10 @@ setup(
             "number_publish = my_robot_controller.number_publisher:main",
             "number_count = my_robot_controller.number_counter:main",
             "reset_count = my_robot_controller.reset_counter_client:main",
-            "q_learning = my_robot_controller.q_learning:main"
+            "q_learning = my_robot_controller.q_learning:main",
+            "ddpg = my_robot_controller.ddpg:main",
+            "DDPG = my_robot_controller.DDPG:main",
+            "common_def = my_robot_controller.common_definitions:main",
         ],
     },
 )

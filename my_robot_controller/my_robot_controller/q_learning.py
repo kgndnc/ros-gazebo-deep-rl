@@ -29,15 +29,17 @@ matplotlib.use('agg')
 
 
 data_folder = os.path.expanduser("~/Repos/bitirme/ros2_ws/src/data/")
-data_name = "Q-Table_small_world_w_rooms_v4"
+data_name = "Q-Table_small_world_w_rooms_v5"
+# Version notes
+# v5: updated reward strategy
 
 
-LIDAR_SAMPLE_SIZE = 181
+LIDAR_SAMPLE_SIZE = 180
 EPISODES = 200_000
 
 ANGULAR_VELOCITY = 1.8
 LINEAR_VELOCITY = 0.9
-REAL_TIME_FACTOR = 77
+REAL_TIME_FACTOR = 10
 
 
 # for every ... episode save to file
@@ -77,6 +79,8 @@ odom_data = np.array([Odometry() for _ in range(agent_count)])
 
 # print(f"laser_ranges: {laser_ranges}")
 # print(f"odom_data: {odom_data}")
+
+#  To break ties I chose "Do Nothing" because that is the more common action
 
 
 class QLearning:
@@ -267,7 +271,7 @@ class Utils:
 
 
 GOAL_REACHED_THRESHOLD = 1.0
-OBSTACLE_COLLISION_THRESHOLD = 0.7
+OBSTACLE_COLLISION_THRESHOLD = 0.5
 
 
 class RobotController(Node):
@@ -310,8 +314,13 @@ class RobotController(Node):
         # self.timer_ = self.create_timer(1.5 / REAL_TIME_FACTOR, self.step)
 
         # Initialize previous distance to goal
-        self.prev_distance_to_goal = Utils.get_distance_to_goal(
-            self.get_robot_position(), self.goal_position)
+        # self.prev_distance_to_goal = Utils.get_distance_to_goal(
+        #     self.get_robot_position(), self.goal_position)
+
+        self.last_actions = {agent_index: (0.0, 0.0)
+                             for agent_index in range(agent_count)}
+        self.prev_distances_to_goal = [Utils.get_distance_to_goal(self.get_robot_position(
+            agent_index), self.goal_position) for agent_index in range(agent_count)]
 
     def step(self):
         # self.get_logger().info(f"Inside step function")
@@ -536,13 +545,53 @@ class RobotController(Node):
             return True
 
         if min(laser_ranges[self.robot_index]) < OBSTACLE_COLLISION_THRESHOLD:
-            # self.get_logger().info(
-            #     f"Collision detected. minRange: {min(laser_ranges[self.robot_index])}")
+            self.get_logger().info(
+                f"Collision detected. minRange: {min(laser_ranges[self.robot_index])}")
             return True
 
         return False
 
-    def get_reward(self, done, action):
+    def _get_reward(self, done, agent_index: int):
+        r_arrive = 200
+        r_collision = -200
+        k = 5
+
+        distance_to_goal = Utils.get_distance_to_goal(
+            (odom_data[agent_index].pose.pose.position.x, odom_data[agent_index].pose.pose.position.y), self.goal_position)
+
+        reached_goal = distance_to_goal < GOAL_REACHED_THRESHOLD
+        collision = min(laser_ranges[agent_index]
+                        ) < OBSTACLE_COLLISION_THRESHOLD
+
+        if done:
+            if reached_goal:
+                return r_arrive
+            if collision:
+                return r_collision
+
+        total_aproach_reward = 0
+        for i, _ in enumerate(odom_data):
+            current_distance_to_goal = Utils.get_distance_to_goal(
+                self.get_robot_position(i), self.goal_position)
+
+            approach_dist = self.prev_distances_to_goal[i] - \
+                current_distance_to_goal
+            approach_dist *= k
+
+            self.prev_distances_to_goal[i] = current_distance_to_goal
+
+            total_aproach_reward += approach_dist
+
+        self.prev_distances_to_goal = [Utils.get_distance_to_goal(self.get_robot_position(
+            agent_index), self.goal_position) for agent_index in range(agent_count)]
+
+        return total_aproach_reward
+
+    def get_reward(self, done, agent_index):
+        r_arrive = 200
+        r_collision = -200
+        k = 5
+
         distance_to_goal = Utils.get_distance_to_goal(
             (odom_data[self.robot_index].pose.pose.position.x, odom_data[self.robot_index].pose.pose.position.y), self.goal_position)
 
@@ -552,30 +601,30 @@ class RobotController(Node):
 
         if done:
             if reached_goal:
-                return 200
+                return r_arrive
             if collision:
-                return -200
+                return r_collision
 
-        current_distance_to_goal = Utils.get_distance_to_goal(
-            self.get_robot_position(), self.goal_position)
+        total_aproach_reward = 0
+        for i, _ in enumerate(odom_data):
+            current_distance_to_goal = Utils.get_distance_to_goal(
+                self.get_robot_position(), self.goal_position)
 
-        # Reward for getting closer to the goal
-        if current_distance_to_goal < self.prev_distance_to_goal:
-            reward = 10  # Positive reward
-        else:
-            reward = -10  # Penalty for moving away from the goal
+            approach_dist = self.prev_distances_to_goal[i] - \
+                current_distance_to_goal
+            approach_dist *= k
 
-        # Update the previous distance to the goal
-        self.prev_distance_to_goal = current_distance_to_goal
+            self.prev_distances_to_goal[i] = current_distance_to_goal
 
-        # Small negative reward for each step taken to encourage faster completion
-        reward -= 1
+            total_aproach_reward += approach_dist
 
-        return reward
+        return total_aproach_reward
 
-    def get_robot_position(self):
+    def get_robot_position(self, robot_index=None):
         global odom_data
-        return Utils.get_position_from_odom_data(odom_data[self.robot_index])
+        if robot_index == None:
+            robot_index = self.robot_index
+        return Utils.get_position_from_odom_data(odom_data[robot_index])
 
     def unpause_physics(self):
         return
@@ -673,13 +722,13 @@ def main(args=None):
     executor = MultiThreadedExecutor()
 
     # if not in training set epsilon as 0.0
-    q_learning = QLearning(actions=actions, alpha=0.7, epsilon=0.315,
+    q_learning = QLearning(actions=actions, alpha=0.7, epsilon=0.4,
                            _save_q_table=True, _load_q_table=True)
 
     for i, namespace in enumerate(namespaces):
         robot_index = i
         robot_controller = RobotController(q_learning, goal_position, namespace, robot_index,
-                                           episode_index=75_020,
+                                           episode_index=11_0020,
                                            lidar_sample_size=LIDAR_SAMPLE_SIZE,
                                            episodes=EPISODES)
         odom_subscriber = OdomSubscriber(namespace, robot_index)

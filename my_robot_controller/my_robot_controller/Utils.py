@@ -1,4 +1,42 @@
+"""
+The extra classes or function that will be used in the main ones
+"""
+
+import argparse
+import datetime
+import sys
+
+import numpy as np
+import tensorflow as tf
+
 import math
+
+
+class Tensorboard:  # pylint: disable=too-few-public-methods
+    """
+    Custom tensorboard for the training loop
+    """
+
+    def __init__(self, log_dir):
+        """
+        Args:
+            log_dir: directory of the logging
+        """
+        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        train_log_dir = log_dir + current_time + '/train'
+        self.train_summary_writer = tf.summary.create_file_writer(
+            train_log_dir)
+
+    def __call__(self, epoch, reward, actions_squared, Q_loss, A_loss):  # pylint: disable=too-many-arguments
+        """
+        Storing all relevant variables
+        """
+        with self.train_summary_writer.as_default():
+            tf.summary.scalar('reward', reward.result(), step=epoch)
+            tf.summary.scalar('actions squared',
+                              actions_squared.result(), step=epoch)
+            tf.summary.scalar('critic loss', Q_loss.result(), step=epoch)
+            tf.summary.scalar('actor loss', A_loss.result(), step=epoch)
 
 
 class Utils:
@@ -7,8 +45,27 @@ class Utils:
         return int((value - min_value) / (max_value - min_value) * num_bins)
 
     @staticmethod
+    def get_angle_between_points(ref_point, point_1_heading, target_point):
+
+        target_vector = [target_point[0] - ref_point[0],
+                         target_point[1] - ref_point[1]]
+
+        target_angle = math.atan2(target_vector[1], target_vector[0])
+
+        angle = target_angle - point_1_heading
+        return angle
+
+    @staticmethod
+    def get_distance_between_points(point_1: tuple[float, float], point_2: tuple[float, float]):
+        x_1, y_1 = point_1
+        x_2, y_2 = point_2
+
+        dist = math.sqrt(((y_2 - y_1)**2) + ((x_2 - x_1)**2))
+        return dist
+
+    @staticmethod
     def get_distance_to_goal(robot_position, goal_position):
-        return math.sqrt((goal_position[0] - robot_position[0]) ** 2 + (goal_position[1] - robot_position[1]) ** 2)
+        return Utils.get_distance_between_points(robot_position, goal_position)
 
     @staticmethod
     def get_angle_to_goal(robot_position, robot_orientation, goal_position):
@@ -53,7 +110,7 @@ class Utils:
         Args:
         - position: The continuous position value (x or y).
         - bounds: A tuple (min_value, max_value) representing the bounds of the environment.
-        - grid_size: The number of discrete steps in the grid.
+        - grid_size: The number of discretes in the grid.
 
         Returns:
         - The discrete index corresponding to the position.
@@ -67,35 +124,38 @@ class Utils:
         return index
 
     @staticmethod
-    def discretize_odom_data(odom, bounds, x_grid_size, y_grid_size):
-        """
-        Discretizes the odometry data into a discrete state.
+    def get_position_from_odom_data(odom):
 
-        Args:
-        - odom: The odometry message containing the position.
-        - bounds: A tuple ((min_x, max_x), (min_y, max_y)) representing the bounds of the environment.
-        - grid_size: The number of discrete steps in the grid.
-
-        Returns:
-        - A tuple (discrete_x, discrete_y) representing the discrete state.
-        """
         x = odom.pose.pose.position.x
         y = odom.pose.pose.position.y
 
-        discrete_x = Utils.discretize_position(
-            x, bounds[0], x_grid_size)
-        discrete_y = Utils.discretize_position(
-            y, bounds[1], y_grid_size)
-        return (discrete_x, discrete_y)
+        # discrete_x = Utils.discretize_position(
+        #     x, bounds[0], x_grid_size*2)
+        # discrete_y = Utils.discretize_position(
+        #     y, bounds[1], y_grid_size*2)
+        return (x, y)
 
     @staticmethod
-    def calculate_remaining_orientation():
-        return
-        curr_orientation = Utils.euler_from_quaternion(
-            odom_data.pose.pose.orientation)
-        remaining_orientation = self.target_orientation - curr_orientation
-        # Normalize the remaining orientation
-        remaining_orientation = (
-            remaining_orientation + math.pi) % (2 * math.pi) - math.pi
+    def get_min_distances_from_slices(laser_data, num_slices=4):
+        """
+        Divide the laser data into slices and take the minimum distance from each slice.
 
-        return remaining_orientation
+        Args:
+        - laser_data: Array of laser scan distances.
+        - num_slices: Number of slices to divide the laser data into (default is 4).
+
+        Returns:
+        - List of minimum distances from each slice.
+        """
+        slice_size = len(laser_data) // num_slices
+        min_distances = []
+
+        for i in range(num_slices):
+            start_index = i * slice_size
+            end_index = start_index + slice_size
+            slice_min = min(laser_data[start_index:end_index])
+            # slice_min = round(slice_min, 2)
+            slice_min = round(slice_min, 0)
+            min_distances.append(slice_min)
+
+        return min_distances
