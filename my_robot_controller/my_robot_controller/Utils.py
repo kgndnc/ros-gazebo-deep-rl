@@ -69,12 +69,19 @@ class Utils:
 
     @staticmethod
     def get_angle_to_goal(robot_position, robot_orientation, goal_position):
+
+        # print("Calculating angle")
+
         goal_vector = [goal_position[0] - robot_position[0],
                        goal_position[1] - robot_position[1]]
         goal_angle = math.atan2(goal_vector[1], goal_vector[0])
 
         # Assuming robot_orientation is given as yaw angle (heading)
         angle_to_goal = goal_angle - robot_orientation
+
+        # Normalize the angle to be within [-pi, pi]
+        angle_to_goal = (angle_to_goal + math.pi) % (2 * math.pi) - math.pi
+
         return angle_to_goal
 
     @staticmethod

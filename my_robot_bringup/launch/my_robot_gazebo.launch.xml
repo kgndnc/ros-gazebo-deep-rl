@@ -27,12 +27,12 @@
   </node>
 
   <!-- spawn_entity.py node for the second robot -->
-  <!-- <node pkg="gazebo_ros" exec="spawn_entity.py" args="-topic robot_description -robot_namespace robot_2 -entity my_robot_2 -x 9.0 -y -5.4 -z 0 -Y $(var pi_minus) ">
+  <node pkg="gazebo_ros" exec="spawn_entity.py" args="-topic robot_description -robot_namespace robot_2 -entity my_robot_2 -x 9.0 -y -5.4 -z 0 -Y $(var pi_minus) ">
   </node>
 
 
   <node pkg="gazebo_ros" exec="spawn_entity.py" args="-topic robot_description -robot_namespace robot_3 -entity my_robot_3  -x 9.0 -y -8.8 -z 0 -Y $(var pi_minus) ">
-  </node> -->
+  </node>
 
   <!-- Rviz2 with config -->
   <node pkg="rviz2" exec="rviz2" output="screen" args="-d $(var rviz_config_path)" />

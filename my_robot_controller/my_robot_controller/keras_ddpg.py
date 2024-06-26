@@ -158,6 +158,8 @@ class GazeboEnv(Env):
 
         future.add_done_callback(callback=callback)
 
+        time.sleep(0.1)
+
         # if future.result() is not None:
         #     self.node.get_logger().info("Reset service call succeeded")
         # else:
@@ -168,7 +170,7 @@ class GazeboEnv(Env):
 
         return observation, info
 
-    def get_obs(self, agent_index):
+    def _get_obs(self, agent_index):
         robot_position = Utils.get_position_from_odom_data(
             odom_data[agent_index])
         orientation = odom_data[agent_index].pose.pose.orientation
@@ -188,6 +190,43 @@ class GazeboEnv(Env):
 
         observation = np.concatenate([laser_ranges[agent_index], [distance_to_goal, angle_to_goal],
                                      self.last_actions.get(agent_index)])
+
+        return observation
+
+    def get_obs(self, agent_index):
+        robot_position = Utils.get_position_from_odom_data(
+            odom_data[agent_index])
+        orientation = odom_data[agent_index].pose.pose.orientation
+        robot_orientation = Utils.euler_from_quaternion(orientation)
+        distance_to_goal = Utils.get_distance_to_goal(
+            robot_position, self.goal_position)
+        angle_to_goal = Utils.get_angle_to_goal(
+            robot_position, robot_orientation, self.goal_position)
+
+        max_lidar_range = 30.0
+        normalized_lidar_ranges = laser_ranges[agent_index] / max_lidar_range
+        normalized_lidar_ranges = np.clip(
+            normalized_lidar_ranges, 0.0, 1.0)
+        normalized_dist_to_goal = distance_to_goal / max_distance_to_goal
+        normalized_angle_to_goal = angle_to_goal / np.pi
+
+        # observation = (lidar ranges, relative params of target, last action)
+        # observation = tuple(normalized_lidar_ranges) + (
+        #     normalized_dist_to_goal, normalized_angle_to_goal) + tuple(self.last_actions.get(agent_index))
+
+        # print("last action")
+        # print(self.last_actions.get(agent_index))
+
+        state_parameter_set = np.concatenate(
+            [[normalized_dist_to_goal, normalized_angle_to_goal],
+             [self.last_actions.get(agent_index)[0],
+             self.last_actions.get(agent_index)[1]]]
+        )
+
+        observation = np.concatenate(
+            [normalized_lidar_ranges, state_parameter_set])
+
+        # print(f"obs: {observation}")
 
         return observation
 
@@ -329,7 +368,7 @@ class Buffer:
     # Eager execution is turned on by default in TensorFlow 2. Decorating with tf.function allows
     # TensorFlow to build a static graph out of the logic and computations in our function.
     # This provides a large speed up for blocks of code that contain many small TensorFlow operations such as this one.
-    @tf.function
+    # @tf.function
     def update(
         self,
         state_batch,
@@ -365,6 +404,13 @@ class Buffer:
         actor_optimizer.apply_gradients(
             zip(actor_grad, actor_model.trainable_variables)
         )
+
+        print(
+            f"Max of actor_grad[0]: {tf.reduce_max(tf.get_static_value(actor_grad) [0]  ):.10f}")
+        print(
+            f"Min of actor_grad[0]: {tf.reduce_min(tf.get_static_value(actor_grad)[0]):.10f}")
+        print(
+            f"Mean of actor_grad[0]: {tf.reduce_mean(tf.get_static_value(actor_grad)[0]):.10f}")
 
     # We compute the loss and update parameters
     def learn(self):
@@ -450,6 +496,7 @@ def get_critic():
 
 
 def policy(state, noise_object):
+
     sampled_actions = keras.ops.squeeze(actor_model(state))
     noise = noise_object()
     # Adding noise to action
@@ -488,6 +535,7 @@ if __name__ == "__main__":
     checkpoint_dir = os.path.join('.', 'ddpg')
 
     if load_models:
+        print("...Loading weights...")
         actor_model.load_weights(os.path.join(checkpoint_dir, 'an.weights.h5'))
         critic_model.load_weights(os.path.join(
             checkpoint_dir, 'cn.weights.h5'))
@@ -511,7 +559,7 @@ if __name__ == "__main__":
     critic_optimizer = keras.optimizers.Adam(critic_lr)
     actor_optimizer = keras.optimizers.Adam(actor_lr)
 
-    total_episodes = 100
+    total_episodes = 10_000
     # Discount factor for future rewards
     gamma = 0.99
     # Used to update target networks
