@@ -41,7 +41,7 @@
 
     <sensor name="laser" type="ray">
       <pose> 0 0 0 0 0 0 </pose>
-      <visualize>0</visualize>
+      <visualize>1</visualize>
       <update_rate>50</update_rate>
       <!-- <update_rate>1000</update_rate> -->
       <always_on>1</always_on>
@@ -51,13 +51,15 @@
             <!-- <samples>360</samples> -->
             <resolution>1</resolution>
             <samples>180</samples>
-            <min_angle>${-3*pi/4.0}</min_angle>
-            <max_angle>${3*pi/4.0}</max_angle>
+            <!-- <min_angle>${-3*pi/4.0}</min_angle>
+            <max_angle>${3*pi/4.0}</max_angle> -->
+            <min_angle>${-pi/2.0}</min_angle>
+            <max_angle>${pi/2.0}</max_angle>
           </horizontal>
         </scan>
         <range>
           <min>0.3</min>
-          <max>30</max>
+          <max>10.0</max>
           <resolution>0.01</resolution>
         </range>
       </ray>

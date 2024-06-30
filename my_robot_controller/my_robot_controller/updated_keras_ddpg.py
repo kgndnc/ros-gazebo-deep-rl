@@ -104,7 +104,7 @@ class GazeboEnv(Env):
             [-1.0, -1.0]), high=np.array([1.0, 1.0]), dtype=np.float32)
 
         # observation = (lidar ranges, relative params of target, last action)
-        self.output_shape = (180, 2, 2)
+        self.output_shape = (184)
 
         # Flattened shape: 180 lidar ranges + 2 relative target params + 2 last action params
         # self.output_shape = (180 + 2 + 2, )

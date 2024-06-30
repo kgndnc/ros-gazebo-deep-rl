@@ -24,6 +24,7 @@ from geometry_msgs.msg import Twist
 GOAL_REACHED_THRESHOLD = 1.0
 OBSTACLE_COLLISION_THRESHOLD = 0.7
 LIDAR_SAMPLE_SIZE = 180
+LIDAR_SAMPLE_SIZE = 20
 SAVE_INTERVAL = 5
 
 
@@ -82,19 +83,16 @@ class GazeboEnv(Env):
 
         # Define action space
         # action (linear_x velocity, angular_z velocity)
-        # self.action_space = spaces.Box(low=np.array(
-        #     [-1.0, -1.0]), high=np.array([2.0, 1.0]), dtype=np.float32)
         self.action_space = spaces.Box(low=np.array(
-            [-1.5, -1.5]), high=np.array([1.5, 1.5]), dtype=np.float32)
+            [-1.0, -1.0]), high=np.array([1.0, 1.0]), dtype=np.float32)
 
         # observation = (lidar ranges, relative params of target, last action)
-        self.output_shape = (180, 2, 2)
 
         # Flattened shape: 180 lidar ranges + 2 relative target params + 2 last action params
-        # self.output_shape = (180 + 2 + 2, )
-        self.observation_space = spaces.Box(low=np.concatenate((np.zeros(180), np.array([0.0, 0.0]), np.array([-1.5, -1.5]))),
-                                            high=np.concatenate((np.full(180, 30.0), np.array(
-                                                [max_distance_to_goal * 1.0, math.pi]), np.array([1.5, 1.5]))),
+        self.output_shape = (LIDAR_SAMPLE_SIZE + 2 + 2,)
+        self.observation_space = spaces.Box(low=np.concatenate((np.zeros(LIDAR_SAMPLE_SIZE), np.array([0.0, -1.0]), np.array([-1.0, -1.0]))),
+                                            high=np.concatenate((np.full(LIDAR_SAMPLE_SIZE, 1.0), np.array(
+                                                [1.0, 1.0]), np.array([1.0, 1.0]))),
                                             dtype=np.float32)
 
         self.reward_range = (-200, 200)
@@ -203,7 +201,7 @@ class GazeboEnv(Env):
         angle_to_goal = Utils.get_angle_to_goal(
             robot_position, robot_orientation, self.goal_position)
 
-        max_lidar_range = 30.0
+        max_lidar_range = 10.0
         normalized_lidar_ranges = laser_ranges[agent_index] / max_lidar_range
         normalized_lidar_ranges = np.clip(
             normalized_lidar_ranges, 0.0, 1.0)
@@ -380,8 +378,9 @@ class Buffer:
         # See Pseudo Code.
         with tf.GradientTape() as tape:
             target_actions = target_actor(next_state_batch, training=True)
+            target_actions_concat = tf.concat(target_actions, axis=-1)
             y = reward_batch + gamma * target_critic(
-                [next_state_batch, target_actions], training=True
+                [next_state_batch, target_actions_concat], training=True
             )
             critic_value = critic_model(
                 [state_batch, action_batch], training=True)
@@ -395,7 +394,9 @@ class Buffer:
 
         with tf.GradientTape() as tape:
             actions = actor_model(state_batch, training=True)
-            critic_value = critic_model([state_batch, actions], training=True)
+            actions_concat = tf.concat(actions, axis=-1)
+            critic_value = critic_model(
+                [state_batch, actions_concat], training=True)
             # Used `-value` as we want to maximize the value given
             # by the critic for our actions
             actor_loss = -keras.ops.mean(critic_value)
@@ -452,18 +453,25 @@ def get_actor():
     last_init = keras.initializers.RandomUniform(minval=-0.003, maxval=0.003)
 
     inputs = layers.Input(shape=(num_states,))
-    out = layers.Dense(256, activation="relu")(inputs)
-    out = layers.Dense(256, activation="relu")(out)
+    # out = layers.Dense(256, activation="relu")(inputs)
+    # out = layers.Dense(256, activation="relu")(out)
+    out = layers.Dense(400, activation="relu")(inputs)
+    out = layers.Dense(300, activation="relu")(out)
     # outputs = layers.Dense(1, activation="tanh",
     #                        kernel_initializer=last_init)(out)
 
     # modified to 2
-    outputs = layers.Dense(2, activation="tanh",
-                           kernel_initializer=last_init)(out)
+    # outputs = layers.Dense(2, activation="tanh",
+    #                        kernel_initializer=last_init)(out)
 
-    # Our action bounds: linear_x in [-1.5, 1.5] and angular_z in [-1.5, 1.5]
-    outputs = outputs * upper_bound
-    model = keras.Model(inputs, outputs)
+    linear_output = layers.Dense(
+        1, activation='sigmoid', kernel_initializer="glorot_uniform")(out)
+    angular_output = layers.Dense(
+        1, activation='tanh', kernel_initializer="glorot_uniform")(out)
+
+    # outputs = outputs * upper_bound
+    model = keras.Model(inputs=[inputs], outputs=[
+                        linear_output, angular_output])
     return model
 
     # # Our upper bound is 2.0 for Pendulum.
@@ -487,7 +495,8 @@ def get_critic():
 
     out = layers.Dense(256, activation="relu")(concat)
     out = layers.Dense(256, activation="relu")(out)
-    outputs = layers.Dense(1)(out)
+    outputs = layers.Dense(
+        1, kernel_initializer=keras.initializers.HeUniform())(out)
 
     # Outputs single value for give state-action
     model = keras.Model([state_input, action_input], outputs)
@@ -495,12 +504,18 @@ def get_critic():
     return model
 
 
-def policy(state, noise_object):
+def policy(state, noise_object, train=True):
+    print("state")
+    print(state)
 
     sampled_actions = keras.ops.squeeze(actor_model(state))
     noise = noise_object()
+
+    print("actions without noise ", sampled_actions)
+
     # Adding noise to action
-    sampled_actions = sampled_actions.numpy() + noise
+    if train:
+        sampled_actions = sampled_actions.numpy() + noise
 
     # We make sure action is within bounds
     legal_action = np.clip(sampled_actions, lower_bound, upper_bound)
@@ -522,7 +537,7 @@ if __name__ == "__main__":
     namespaces = ["robot_1", "robot_2", "robot_3"]
     namespaces = ["robot_1"]
 
-    std_dev = 0.2
+    std_dev = 0.15
     ou_noise = OUActionNoise(mean=np.zeros(
         1), std_deviation=float(std_dev) * np.ones(1))
 
@@ -556,10 +571,11 @@ if __name__ == "__main__":
     critic_lr = 0.0001
     actor_lr = 0.001
 
-    critic_optimizer = keras.optimizers.Adam(critic_lr)
-    actor_optimizer = keras.optimizers.Adam(actor_lr)
+    critic_optimizer = keras.optimizers.Adam(critic_lr, clipvalue=0.2)
+    actor_optimizer = keras.optimizers.Adam(actor_lr, clipvalue=0.2)
 
     total_episodes = 10_000
+    total_episodes = 1_000
     # Discount factor for future rewards
     gamma = 0.99
     # Used to update target networks
@@ -569,7 +585,7 @@ if __name__ == "__main__":
     # for single agent
     buffer_size = 100_000
     batch_size = 128
-    max_steps = 800
+    max_steps = 600
 
     buffer = Buffer(buffer_capacity=buffer_size, batch_size=batch_size)
 
@@ -578,8 +594,6 @@ if __name__ == "__main__":
     # To store average reward history of last few episodes
     avg_reward_list = []
 
-    namespaces = ["robot_1", "robot_2", "robot_3"]
-    namespaces = ["robot_1"]
     executor = MultiThreadedExecutor()
     for i, namespace in enumerate(namespaces):
         robot_index = i
@@ -604,18 +618,19 @@ if __name__ == "__main__":
                 keras.ops.convert_to_tensor(prev_state), 0
             )
 
-            action = policy(tf_prev_state, ou_noise)
-            # Receive state and reward from environment.
+            action = policy(tf_prev_state, ou_noise, train=train)
 
+            # Receive state and reward from environment.
             state, reward, done, truncated, _ = env.step(action, agent_index)
 
             buffer.record((prev_state, action, reward, state))
             episodic_reward += reward
 
-            buffer.learn()
+            if train:
+                buffer.learn()
 
-            update_target(target_actor, actor_model, tau)
-            update_target(target_critic, critic_model, tau)
+                update_target(target_actor, actor_model, tau)
+                update_target(target_critic, critic_model, tau)
 
             # End this episode when `done` or `truncated` is True
             if done or truncated:
