@@ -33,6 +33,10 @@
 
   <node pkg="gazebo_ros" exec="spawn_entity.py" args="-topic robot_description -robot_namespace robot_3 -entity my_robot_3  -x 9.0 -y -8.8 -z 0 -Y $(var pi_minus) ">
   </node>
+  <!-- <node pkg="gazebo_ros" exec="spawn_entity.py" args="-topic robot_description -robot_namespace robot_4 -entity my_robot_4  -x 9.0 -y 1.1 -z 0 -Y $(var pi_minus) ">
+  </node>
+  <node pkg="gazebo_ros" exec="spawn_entity.py" args="-topic robot_description -robot_namespace robot_5 -entity my_robot_5  -x 9.0 -y 4.2 -z 0 -Y $(var pi_minus) ">
+  </node> -->
 
   <!-- Rviz2 with config -->
   <node pkg="rviz2" exec="rviz2" output="screen" args="-d $(var rviz_config_path)" />

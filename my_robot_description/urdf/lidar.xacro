@@ -42,7 +42,7 @@
     <sensor name="laser" type="ray">
       <pose> 0 0 0 0 0 0 </pose>
       <visualize>1</visualize>
-      <update_rate>50</update_rate>
+      <update_rate>100</update_rate>
       <!-- <update_rate>1000</update_rate> -->
       <always_on>1</always_on>
       <ray>

@@ -94,7 +94,7 @@
         <inertial>
           <mass>1</mass>
         </inertial>
-        <collision name='back'>
+        <!-- <collision name='back'>
           <pose>0 0.005 0.6 0 -0 0</pose>
           <geometry>
             <box>
@@ -114,7 +114,7 @@
               <ode/>
             </friction>
           </surface>
-        </collision>
+        </collision> -->
         <visual name='visual1'>
           <pose>0 0.005 0.6 0 -0 0</pose>
           <geometry>
@@ -129,7 +129,7 @@
             </script>
           </material>
         </visual>
-        <collision name='left_side'>
+        <!-- <collision name='left_side'>
           <pose>0.45 -0.195 0.6 0 -0 0</pose>
           <geometry>
             <box>
@@ -149,7 +149,7 @@
               <ode/>
             </friction>
           </surface>
-        </collision>
+        </collision> -->
         <visual name='visual2'>
           <pose>0.45 -0.195 0.6 0 -0 0</pose>
           <geometry>
@@ -164,7 +164,7 @@
             </script>
           </material>
         </visual>
-        <collision name='right_side'>
+        <!-- <collision name='right_side'>
           <pose>-0.45 -0.195 0.6 0 -0 0</pose>
           <geometry>
             <box>
@@ -184,7 +184,7 @@
               <ode/>
             </friction>
           </surface>
-        </collision>
+        </collision> -->
         <visual name='visual3'>
           <pose>-0.45 -0.195 0.6 0 -0 0</pose>
           <geometry>
@@ -199,7 +199,7 @@
             </script>
           </material>
         </visual>
-        <collision name='bottom'>
+        <!-- <collision name='bottom'>
           <pose>0 -0.195 0.03 0 -0 0</pose>
           <geometry>
             <box>
@@ -219,7 +219,7 @@
               <ode/>
             </friction>
           </surface>
-        </collision>
+        </collision> -->
         <visual name='visual4'>
           <pose>0 -0.195 0.03 0 -0 0</pose>
           <geometry>
@@ -234,7 +234,7 @@
             </script>
           </material>
         </visual>
-        <collision name='top'>
+        <!-- <collision name='top'>
           <pose>0 -0.195 1.19 0 -0 0</pose>
           <geometry>
             <box>
@@ -254,7 +254,7 @@
               <ode/>
             </friction>
           </surface>
-        </collision>
+        </collision> -->
         <visual name='visual5'>
           <pose>0 -0.195 1.19 0 -0 0</pose>
           <geometry>
@@ -269,7 +269,7 @@
             </script>
           </material>
         </visual>
-        <collision name='low_shelf'>
+        <!-- <collision name='low_shelf'>
           <pose>0 -0.195 0.43 0 -0 0</pose>
           <geometry>
             <box>
@@ -289,7 +289,7 @@
               <ode/>
             </friction>
           </surface>
-        </collision>
+        </collision> -->
         <visual name='visual6'>
           <pose>0 -0.195 0.43 0 -0 0</pose>
           <geometry>
@@ -304,7 +304,7 @@
             </script>
           </material>
         </visual>
-        <collision name='high_shelf'>
+        <!-- <collision name='high_shelf'>
           <pose>0 -0.195 0.8 0 -0 0</pose>
           <geometry>
             <box>
@@ -324,7 +324,7 @@
               <ode/>
             </friction>
           </surface>
-        </collision>
+        </collision> -->
         <visual name='visual7'>
           <pose>0 -0.195 0.8 0 -0 0</pose>
           <geometry>
@@ -343,7 +343,7 @@
         <enable_wind>0</enable_wind>
         <kinematic>0</kinematic>
       </link>
-      <pose>-8.06127 1.00754 0 0 -0 1.57611</pose>
+      <pose>0.43 1.58 0 0 -0 1.57611</pose>
     </model>
     <gui fullscreen='0'>
       <camera name='user_camera'>
@@ -702,7 +702,7 @@
         <kinematic>0</kinematic>
       </link>
     </model>
-    <state world_name='default'>
+    <!-- <state world_name='default'>
       <sim_time>36 302000000</sim_time>
       <real_time>36 454645993</real_time>
       <wall_time>1719583234 782605454</wall_time>
@@ -818,7 +818,7 @@
       <light name='sun'>
         <pose>0 0 10 0 -0 0</pose>
       </light>
-    </state>
+    </state> -->
     <model name='unit_box_0'>
       <pose>3.64964 9.69064 0.5 0 -0 0</pose>
       <link name='link'>
@@ -980,5 +980,13 @@
         <kinematic>0</kinematic>
       </link>
     </model>
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">
+      <ros>
+        <namespace>/gazebo</namespace>
+        <!-- <argument>model_states:=model_states_plug</argument>
+        <argument>link_states:=link_states_plug</argument> -->
+      </ros>
+      <update_rate>1.0</update_rate>
+    </plugin>
   </world>
 </sdf>

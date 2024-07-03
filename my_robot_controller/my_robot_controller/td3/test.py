@@ -29,55 +29,6 @@ device = torch.device("cuda" if torch.cuda.is_available()
                       else "cpu")  # cuda or cpu
 
 
-def evaluate(network, epoch, eval_episodes=10):
-    avg_reward = 0.0
-    col = 0
-    for _ in range(eval_episodes):
-        env.node.get_logger().info(f"evaluating episode {_}")
-        count = 0
-        state_n = env.reset()
-        done_n = [False]
-        while not any(done_n) and count < 501:
-            # action = network.get_action(np.array(state))
-            # env.node.get_logger().info(f"action : {action}")
-            # a_in = [(action[0] + 1) / 2, action[1]]
-            # state, reward, done, _ = env.step(a_in)
-            # avg_reward += reward
-            # count += 1
-
-            iter_reward = 0
-            action_n = []
-            for i in range(AGENT_COUNT):
-                action = network.get_action(np.array(state_n[i]))
-                env.node.get_logger().info(f"action : {action}")
-                action_n.append(action)
-
-            a_in_n = []
-            for i, action in enumerate(action_n):
-                a_in = [(action[0] + 1) / 2, action[1]]
-                a_in_n.append(a_in)
-
-            state_n, reward_n, done_n, _ = env.step(a_in_n)
-            for r in reward_n:
-                iter_reward += r
-                avg_reward += r
-            count += 1
-
-            # if iter_reward < -90 * AGENT_COUNT:
-            if iter_reward < -90:
-                col += 1
-
-    avg_reward /= eval_episodes
-    avg_col = col / eval_episodes
-    env.node.get_logger().info("..............................................")
-    env.node.get_logger().info(
-        "Average Reward over %i Evaluation Episodes, Epoch %i: avg_reward %f, avg_col %f"
-        % (eval_episodes, epoch, avg_reward, avg_col)
-    )
-    env.node.get_logger().info("..............................................")
-    return avg_reward
-
-
 class Actor(nn.Module):
     def __init__(self, state_dim, action_dim):
         super(Actor, self).__init__()
@@ -279,35 +230,8 @@ if __name__ == "__main__":
     rclpy.init()
 
     seed = 0  # Random seed number
-    eval_freq = 5e3  # After how many steps to perform the evaluation
     max_ep = 500  # maximum number of steps per episode
-    eval_ep = 10  # number of episodes for evaluation
-    max_timesteps = 5e6  # Maximum number of steps to perform
-    # Initial exploration noise starting value in range [expl_min ... 1]
-    expl_noise = 1
-    expl_decay_steps = (
-        500000  # Number of steps over which the initial exploration noise will decay over
-    )
-    # Exploration noise after the decay in range [0...expl_noise]
-    expl_min = 0.1
-    batch_size = 40  # Size of the mini-batch
-    # Discount factor to calculate the discounted future reward (should be close to 1)
-    discount = 0.99999
-    tau = 0.005  # Soft target update variable (should be close to 0)
-    policy_noise = 0.2  # Added noise for exploration
-    noise_clip = 0.5  # Maximum clamping values of the noise
-    policy_freq = 2  # Frequency of Actor network updates
-    buffer_size = 1e6  # Maximum size of the buffer
-    file_name = "td3_policy"  # name of the file to store the policy
-    save_model = True  # Whether to save the model or not
-    load_model = True  # Whether to load a stored model
-    random_near_obstacle = True  # To take random actions near obstacles or not
-
-    # Create the network storage folders
-    if not os.path.exists("./results"):
-        os.makedirs("./results")
-    if save_model and not os.path.exists("./pytorch_models"):
-        os.makedirs("./pytorch_models")
+    file_name = "td3_policy"  # load policy from this file
 
     # Create the training environment
     # laser sample count
@@ -322,29 +246,15 @@ if __name__ == "__main__":
 
     # Create the network
     network = TD3(state_dim, action_dim, max_action)
-    # Create a replay buffer
-    replay_buffer = ReplayBuffer(buffer_size, seed)
-    if load_model:
-        try:
-            print("Will load existing model.")
-            network.load(file_name, "./pytorch_models")
-        except:
-            print(
-                "Could not load the stored model parameters, initializing training with random parameters")
 
-    # Create evaluation data store
-    evaluations = []
+    try:
+        print("loading policy...")
+        network.load(file_name, "./pytorch_models")
+    except:
+        raise ValueError('Could not load the stored model parameters')
 
-    timestep = 0
-    timesteps_since_eval = 0
-    episode_num = 0
-    done = True
-    epoch = 1
     episode_timesteps = 0
-    episode_reward = 0
-
-    count_rand_actions = 0
-    random_action = []
+    done = True
 
     goal_position = (0.43, 1.58)
 
@@ -378,104 +288,75 @@ if __name__ == "__main__":
 
     action_space_n = [env.action_space for i in range(env.agent_count)]
 
-    # # benchmark info (rewards, agent info etc.)
-    # episode_rewards = [0.0]  # sum of rewards for all agents
-    # agent_rewards = [[0.0]
-    #                  for _ in range(env.n)]  # individual agent reward
-    # final_ep_rewards = []  # sum of rewards for training curve
-    # final_ep_ag_rewards = []  # agent rewards for training curve
-    # agent_info = [[[]]]  # placeholder for benchmarking info
-    # # saver = tf.train.Checkpoint()
-    # episode_step = 0
-    # train_step = 0
-    # t_start = time.time()
-
     # reset environment
     prev_observation_n = env.reset()
-    just_reset = True
 
-    print('Starting iterations...')
+    print('Starting test...')
 
-    # training loop:
-    while timestep < max_timesteps:
+    # TODO: if goal is reached stop agent
+
+    # test loop:
+    while rclpy.ok():
         if done:
-            env.node.get_logger().info(
-                f"Done. Episode num: {episode_num} - Total episode rewards: {episode_reward} ")
-            if timestep != 0:
-                env.node.get_logger().info(f"Training network")
-                network.train(replay_buffer,
-                              episode_timesteps,
-                              batch_size,
-                              discount,
-                              tau,
-                              policy_noise,
-                              noise_clip,
-                              policy_freq,
-                              )
-                if timesteps_since_eval >= eval_freq:
-                    env.node.get_logger().info("Validating")
-                    timesteps_since_eval %= eval_freq
-                    evaluations.append(
-                        evaluate(network=network, epoch=epoch,
-                                 eval_episodes=eval_ep)
-                    )
-                    if save_model:
-                        network.save(
-                            file_name, directory="./pytorch_models")
-                        np.save("./results/%s" % (file_name), evaluations)
-                    epoch += 1
+            prev_observation_n = env.reset()
+            done = False
 
-                prev_observation_n = env.reset()
+            # get actions
+            action_n = []
+            for i in range(AGENT_COUNT):
+                action = network.get_action(np.array(prev_observation_n[i]))
+                action_n.append(action)
+
+            # scale actions to fit proper ranges
+            a_in_n = []
+            for i, action in enumerate(action_n):
+                a_in = [(action[0] + 1) / 2, action[1]]
+                a_in_n.append(a_in)
+
+            observation, reward, done_n, info = env.step(a_in_n, test=True)
+
+            # done = False if episode_timesteps + 1 == max_ep else int(any(done_n))
+
+            # check done
+            if episode_timesteps + 1 == max_ep:
                 done = False
-                just_reset = True
+            elif any(info.get('collision')):
+                done = False
+            elif all(info.get('target')):
+                done = False
 
-                episode_reward = 0
-                episode_timesteps = 0
-                episode_num += 1
+            episode_timesteps = 0
 
-             # add some exploration noise
+        else:
+            # get actions
+            action_n = []
+            for i in range(AGENT_COUNT):
+                action = network.get_action(np.array(prev_observation_n[i]))
+                action_n.append(action)
 
-        if expl_noise > expl_min:
-            expl_noise = expl_noise - ((1 - expl_min) / expl_decay_steps)
+            # scale actions to fit proper ranges
+            a_in_n = []
+            for i, action in enumerate(action_n):
+                a_in = [(action[0] + 1) / 2, action[1]]
+                a_in_n.append(a_in)
 
-        # get actions
-        action_n = []
-        for i in range(AGENT_COUNT):
-            action = network.get_action(np.array(prev_observation_n[i]))
-            action = (action + np.random.normal(0, expl_noise, size=action_dim)).clip(
-                -max_action, max_action
-            )
-            action_n.append(action)
+            observation, reward, done_n, info = env.step(a_in_n, test=True)
 
-        # random near obstacle (add later if you want)
+            # print('info')
+            # print(info)
 
-        # scale actions to fit proper ranges
-        a_in_n = []
-        for i, action in enumerate(action_n):
-            a_in = [(action[0] + 1) / 2, action[1]]
-            a_in_n.append(a_in)
+            # bu şekilde bir ajan ulaşınca yeni hedef belirleniyor.
+            # done = False if episode_timesteps + 1 == max_ep else int(all(done_n))
 
-        observation, reward, done_n, info = env.step(a_in_n)
-        if just_reset:
-            reward = [0.0 for _ in range(AGENT_COUNT)]
-            just_reset = False
+            # check done
+            if episode_timesteps + 1 == max_ep:
+                done = False
+            elif any(info.get('collision')):
+                done = False
+            elif all(info.get('target')):
+                done = False
 
-        done_bool = 0 if episode_timesteps + \
-            1 == max_ep else int(any(done_n))
-        done = 1 if episode_timesteps + 1 == max_ep else int(any(done_n))
-
-        for i, r in enumerate(reward):
-            episode_reward += r
-            # print(f"Reward for agent_{i}: {r}")
-
-        # save experience to buffer
-        for i in range(AGENT_COUNT):
-            replay_buffer.add(
-                prev_observation_n[i], action_n[i], reward[i], done_bool, observation[i])
-
-        prev_observation_n = observation
-        episode_timesteps += 1
-        timestep += 1
-        timesteps_since_eval += 1
+            prev_observation_n = observation
+            episode_timesteps += 1
 
     rclpy.shutdown()

@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<robot name="my_robot"
+  xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- Reference -> http://wiki.ros.org/urdf/XML -->
+  <!--  -->
+  <!-- Everything has to be between this `robot` tag (like <html> tag in HTML) -->
+  <!--  -->
+  <xacro:include filename="common_properties.xacro"/>
+  <xacro:include filename="test_mobile_base.xacro"/>
+  <xacro:include filename="mobile_base_gazebo.xacro"/>
+  <!-- <xacro:include filename="camera.xacro"/> -->
+  <xacro:include filename="lidar.xacro"/>
+
+</robot>

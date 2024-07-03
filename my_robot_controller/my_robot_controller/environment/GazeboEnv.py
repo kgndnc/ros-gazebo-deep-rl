@@ -1,4 +1,5 @@
 from numpy.typing import NDArray
+import random
 from collections import namedtuple
 from gymnasium import Env, spaces
 import numpy as np
@@ -88,17 +89,26 @@ class GazeboEnvMultiAgent(Env):
         self.prev_distances_to_goal = [Utils.get_distance_to_goal(self.get_robot_position(
             agent_index), self.goal_position) for agent_index in range(agent_count)]
 
-    """
-    -3.29, -5.56
-    """
+    goal_positions = [(-6.5, -6.0), (0.43, 1.58), (-8.061270, 1.007540),
+                      (-4.224874, 6.551670), (7.500443, 8.963343),
+                      (-1.097499, 11.650926), (-8.499418, -9.187337),
+                      (-1.944295, -8.582796), (-4.369452, 1.338763)]
 
-    def set_goal_position(self):
+    def change_goal_position(self):
+
         # TODO: make this dynamic
-        goal_position = (-4.5, -6.0)
+
+        goal_position = random.choice(GazeboEnvMultiAgent.goal_positions)
+
         request = SetEntityState.Request()
         request.state.name = "bookshelf"
         request.state.pose.position.x = goal_position[0]
-        request.state.pose.position.y = goal_position[0]
+        request.state.pose.position.y = goal_position[1]
+
+        request.state.pose.orientation.x = 0.0
+        request.state.pose.orientation.y = 0.0
+        request.state.pose.orientation.z = 0.7089829505001405
+        request.state.pose.orientation.w = 0.7052256205641677
 
         while not self.set_entity_state.wait_for_service(timeout_sec=1.0):
             self.node.get_logger().info(
@@ -106,10 +116,11 @@ class GazeboEnvMultiAgent(Env):
         try:
             self.set_entity_state.call_async(request)
             self.goal_position = goal_position
+            print(f"Goal position changed. New position: {self.goal_position}")
         except:
             self.node.get_logger().error("/gazebo/set_entity_state service call failed!")
 
-    def step(self, action_n: List):
+    def step(self, action_n: List, test=False):
 
         cmds = []
 
@@ -122,7 +133,7 @@ class GazeboEnvMultiAgent(Env):
             cmds.append(msg)
             self.last_actions[i] = (linear_x, angular_z)
 
-        print(f"Publishing velocities {action_n}")
+        # print(f"Publishing velocities {action_n}")
 
         for i in range(self.agent_count):
             cmd = cmds[i]
@@ -139,9 +150,19 @@ class GazeboEnvMultiAgent(Env):
 
         # (done_n, collision_n, target_n, min_laser_readings)
         terminated, collision, target, min_laser_readings = self.check_done()
+
+        if not test:
+            if any(target):
+                self.change_goal_position()
+        else:
+            if all(target):
+                self.change_goal_position()
+
         reward = self.get_reward(
             terminated, collision, target, action_n, min_laser_readings)
-        info = [None for _ in range(self.agent_count)]
+
+        info = {"terminated": terminated,
+                "collision": collision, "target": target}
 
         return observation, reward, terminated, info
 
@@ -172,12 +193,10 @@ class GazeboEnvMultiAgent(Env):
         except:
             self.node.get_logger().error("/reset_world service call failed!")
 
-        time.sleep(0.2)
-
         # set bookshelf position
-        # TODO: there's a problem with service /gazebo/set_entity_state
-        # issue: service is not advertised by Gazebo
         # self.set_goal_position()
+
+        time.sleep(0.1)
 
         observations = self.get_obs()
 
@@ -224,7 +243,7 @@ class GazeboEnvMultiAgent(Env):
         # return observations list
         # observation = [lidar ranges, distance to goal, angle to goal, last action]
 
-        print(f"obs: {observations}")
+        # print(f"obs: {observations}")
 
         return observations
 

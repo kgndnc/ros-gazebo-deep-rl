@@ -1,0 +1,63 @@
+<launch>
+  <let name="urdf_path_1" value="$(find-pkg-share my_robot_description)/urdf/test_my_robot_1.urdf" />
+  <let name="urdf_path_2" value="$(find-pkg-share my_robot_description)/urdf/test_my_robot_2.urdf" />
+  <let name="urdf_path_3" value="$(find-pkg-share my_robot_description)/urdf/test_my_robot_3.urdf" />
+
+  <let name="urdf_path" value="$(find-pkg-share my_robot_description)/urdf/test_my_robot.urdf.xacro" />
+
+  <let name="rviz_config_path" value="$(find-pkg-share my_robot_description)/rviz/urdf_config.rviz" />
+  <let name="pi_minus" value="-3.141592654" />
+  <let name="pi" value="3.141592654" />
+
+  <!-- Robot state publisher nodes  -->
+  <!-- <node pkg="robot_state_publisher" namespace="robot_1" exec="robot_state_publisher">
+    <param name="robot_description" value="$(var urdf_path_1)" />
+    <param name="use_sim_time" value="true" />
+  </node> -->
+
+  <node pkg="robot_state_publisher" namespace="robot_1" exec="robot_state_publisher">
+    <param name="robot_description" value="$(command 'xacro $(var urdf_path_1)')" />
+    <param name="use_sim_time" value="true" />
+  </node>
+  <node pkg="robot_state_publisher" namespace="robot_2" exec="robot_state_publisher">
+    <param name="robot_description" value="$(command 'xacro $(var urdf_path_2)')" />
+    <param name="use_sim_time" value="true" />
+  </node>
+  <node pkg="robot_state_publisher" namespace="robot_3" exec="robot_state_publisher">
+    <param name="robot_description" value="$(command 'xacro $(var urdf_path_3)')" />
+    <param name="use_sim_time" value="true" />
+  </node>
+
+
+
+  <!-- Gazebo launch file -->
+  <!--  ros2 launch gazebo_ros gazebo.launch.py -->
+  <include file="$(find-pkg-share gazebo_ros)/launch/gazebo.launch.py">
+    <arg name="world" value="$(find-pkg-share my_robot_bringup)/worlds/simple_world_w_obs.sdf" />
+    <arg name="use_sim_time" value="true"/>
+  </include>
+
+  <!-- spawn_entity.py node -->
+  <!-- spawns the robot that is defined in the /robot_description topic (in urdf format) -->
+  <!-- spawn_entity.py node for the first robot -->
+  <node pkg="gazebo_ros" exec="spawn_entity.py" namespace="robot_1" args="-topic /robot_1/robot_description -robot_namespace robot_1 -entity my_robot_1 -x 9.0 -y -1.9 -z 0 -Y $(var pi_minus) ">
+  </node>
+
+  <!-- spawn_entity.py node for the second robot -->
+  <node pkg="gazebo_ros" exec="spawn_entity.py" namespace="robot_2" args="-topic /robot_2/robot_description -robot_namespace robot_2 -entity my_robot_2 -x 9.0 -y -5.4 -z 0 -Y $(var pi_minus) ">
+  </node>
+
+
+  <node pkg="gazebo_ros" exec="spawn_entity.py" namespace="robot_3" args="-topic /robot_3/robot_description -robot_namespace robot_3 -entity my_robot_3  -x 9.0 -y -8.8 -z 0 -Y $(var pi_minus) ">
+  </node>
+
+
+  <!-- Rviz2 with config -->
+  <node pkg="rviz2" exec="rviz2" output="screen" args="-d $(var rviz_config_path)" />
+
+
+  <!-- run q_learning node -->
+  <!-- <node pkg="my_robot_controller" exec="q_learning" /> -->
+
+</launch>
+

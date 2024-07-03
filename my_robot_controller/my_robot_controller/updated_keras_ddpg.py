@@ -13,7 +13,7 @@ import tensorflow as tf
 from keras import layers
 import keras
 import os
-from Utils import Utils
+
 import math
 
 from sensor_msgs.msg import LaserScan
@@ -21,8 +21,16 @@ from nav_msgs.msg import Odometry
 from rclpy.executors import MultiThreadedExecutor
 from std_srvs.srv import Empty
 from geometry_msgs.msg import Twist
-
 from collections import namedtuple
+import sys
+
+sys.path.append("./environment")  # nopep8
+
+from environment.config import *
+from environment.subscribers import OdomSubscriber, ScanSubscriber
+from environment.GazeboEnv import GazeboEnvMultiAgent
+from environment.Utils import Utils
+
 
 Observation = namedtuple('Observation', ['lidar', 'state_params'])
 
@@ -53,238 +61,79 @@ max_distance_to_goal = math.floor(
     math.sqrt(x_grid_size**2 + y_grid_size**2) - 0.6)
 max_distance_to_goal *= 1.0
 # global variables for sensor data
-agent_count = 1
-laser_ranges = np.array([np.zeros(LIDAR_SAMPLE_SIZE)
-                        for _ in range(agent_count)])
-odom_data = np.array([Odometry() for _ in range(agent_count)])
+agent_count = 3
 
 
-class OdomSubscriber(Node):
-    def __init__(self, namespace: str, robot_index: int):
-        super().__init__('odom_subscriber_' + namespace)
-        self.subscription = self.create_subscription(
-            Odometry,
-            "/" + namespace + '/odom',
-            self.odom_callback,
-            10)
-        self.robot_index = robot_index
-        self.subscription
+class GazeboEnv(GazeboEnvMultiAgent):
+    def __init__(self, odom_subscribers: List[OdomSubscriber], scan_subscribers: List[ScanSubscriber], goal_position=...):
+        super().__init__(odom_subscribers, scan_subscribers, goal_position)
 
-    def odom_callback(self, msg: Odometry):
-        global odom_data
-        odom_data[self.robot_index] = msg
-        # print(f"Updating odom data",
-        #       (odom_data[self.robot_index].pose.pose.position.x, odom_data[self.robot_index].pose.pose.position.y))
+    def get_obs(self):
+        # return observations list
+        # observation = [lidar ranges, distance to goal, angle to goal, last action]
+        observations = []
+        max_lidar_range = MAX_LIDAR_RANGE
 
+        for i in range(self.agent_count):
+            robot_position = Utils.get_position_from_odom_data(
+                self.odom_subscribers[i].odom_data)
+            orientation = self.odom_subscribers[i].odom_data.pose.pose.orientation
+            robot_orientation = Utils.euler_from_quaternion(orientation)
+            distance_to_goal = Utils.get_distance_to_goal(
+                robot_position, self.goal_position)
+            angle_to_goal = Utils.get_angle_to_goal(
+                robot_position, robot_orientation, self.goal_position)
 
-class ScanSubscriber(Node):
-    def __init__(self, namespace: str, robot_index: int):
-        super().__init__('scan_subscriber_' + namespace)
-        self.subscription = self.create_subscription(
-            LaserScan, "/" + namespace + "/scan", self.scan_callback, 10)
-        self.robot_index = robot_index
-        self.subscription
+            # reduce 180 samples to 20
+            # reduced_lidar_ranges = Utils.reduce_lidar_samples(
+            #     self.scan_subscribers[i].laser_ranges, 20)
 
-    def scan_callback(self, msg: LaserScan):
-        global laser_ranges
-        laser_ranges[self.robot_index] = msg.ranges
-        # print(f"Updating scan data")
+            normalized_lidar_ranges = self.scan_subscribers[i].laser_ranges / \
+                max_lidar_range
 
+            normalized_lidar_ranges = np.clip(
+                normalized_lidar_ranges, 0.0, 1.0)
+            normalized_dist_to_goal = distance_to_goal / max_distance_to_goal
+            normalized_angle_to_goal = angle_to_goal / np.pi
 
-class GazeboEnv(Env):
-    def __init__(self, goal_position=(0., 0.)):
-        super(GazeboEnv, self).__init__()
-        global agent_count
+            state_parameter_set = np.concatenate(
+                [[normalized_dist_to_goal, normalized_angle_to_goal],
+                    [self.last_actions.get(i)[0],
+                     self.last_actions.get(i)[1]]]
+            )
 
-        # Define action space
-        # action (linear_x velocity, angular_z velocity)
-        # self.action_space = spaces.Box(low=np.array(
-        #     [-1.0, -1.0]), high=np.array([2.0, 1.0]), dtype=np.float32)
-        self.action_space = spaces.Box(low=np.array(
-            [-1.0, -1.0]), high=np.array([1.0, 1.0]), dtype=np.float32)
+            # observation = np.concatenate(
+            #     [normalized_lidar_ranges, state_parameter_set])
 
-        # observation = (lidar ranges, relative params of target, last action)
-        self.output_shape = (184)
+            observation = Observation(
+                lidar=normalized_lidar_ranges, state_params=state_parameter_set)
 
-        # Flattened shape: 180 lidar ranges + 2 relative target params + 2 last action params
-        # self.output_shape = (180 + 2 + 2, )
-        self.observation_space = spaces.Box(low=np.concatenate((np.zeros(180), np.array([0.0, 0.0]), np.array([-1.5, -1.5]))),
-                                            high=np.concatenate((np.full(180, 30.0), np.array(
-                                                [max_distance_to_goal * 1.0, math.pi]), np.array([1.5, 1.5]))),
-                                            dtype=np.float32)
+            observations.append(observation)
 
-        self.reward_range = (-200, 200)
-        # self.spec.max_episode_steps = 1000
-        # self.spec.name = "GazeboDDPG"
+        # return observations list
+        # observation = [lidar ranges, distance to goal, angle to goal, last action]
 
-        self.node = Node('GazeboEnv')
+        # print(f"obs: {observations}")
 
-        self.vel_pubs = {agent_index: self.node.create_publisher(
-            Twist, f"/robot_{agent_index+1}/cmd_vel", 10)
-            for agent_index in range(agent_count)}
+        return observations
 
-        self.unpause = self.node.create_client(Empty, "/unpause_physics")
-        self.pause = self.node.create_client(Empty, "/pause_physics")
-        self.reset_proxy = self.node.create_client(Empty, "/reset_world")
-        self.req = Empty.Request
-        self.goal_position = goal_position
+    def reset(self):
 
-        self.last_actions = {agent_index: (0.0, 0.0)
-                             for agent_index in range(agent_count)}
-        self.prev_distances_to_goal = [Utils.get_distance_to_goal(self.get_robot_position(
-            agent_index), self.goal_position) for agent_index in range(agent_count)]
+        while not self.reset_proxy.wait_for_service(timeout_sec=1.0):
+            self.node.get_logger().info("/reset_world service not available, waiting")
 
-    def step(self, action: Any, agent_index: int) -> tuple[Any, SupportsFloat, bool, bool, dict[str, Any]]:
-        global odom_data
-        global laser_ranges
+        try:
+            self.reset_proxy.call_async(Empty.Request())
+        except:
+            self.node.get_logger().error("/reset_world service call failed!")
 
-        linear_x = float(action[0])
-        angular_z = float(action[1])
+        self.change_goal_position()
 
-        msg = Twist()
-        msg.linear.x = linear_x
-        msg.angular.z = angular_z
+        time.sleep(0.1)
 
-        # print(
-        #     f"Publishing velocities {action}")
+        observations = self.get_obs()
 
-        self.vel_pubs[agent_index].publish(msg)
-        self.last_actions[agent_index] = (linear_x, angular_z)
-
-        time.sleep(0.15)
-
-        # observation = (lidar ranges, relative params of target, last action)
-        observation = self.get_obs(agent_index)
-
-        terminated = self.check_done(agent_index)
-        reward = self.get_reward(terminated, agent_index)
-        truncated = None
-        info = None
-
-        return observation, reward, terminated, truncated, info
-
-    def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple[Any, dict[str, Any]]:
-
-        # Wait for the future to complete
-        # rclpy.spin_until_future_complete(self.node, future, self.node.executor)
-        msg = Twist()
-        msg.linear.x = 0.0
-        msg.angular.z = 0.0
-
-        for i in range(agent_count):
-            self.vel_pubs[i].publish(msg)
-
-        future = self.reset_proxy.call_async(Empty.Request())
-
-        def callback(msg):
-            print(msg.result())
-
-        future.add_done_callback(callback=callback)
-
-        # if future.result() is not None:
-        #     self.node.get_logger().info("Reset service call succeeded")
-        # else:
-        #     self.node.get_logger().error("Reset service call failed")
-
-        time.sleep(0.2)
-
-        observation = self.get_obs(0)
-        info = None
-
-        return observation, info
-
-    def get_obs(self, agent_index):
-        robot_position = Utils.get_position_from_odom_data(
-            odom_data[agent_index])
-        orientation = odom_data[agent_index].pose.pose.orientation
-        robot_orientation = Utils.euler_from_quaternion(orientation)
-        distance_to_goal = Utils.get_distance_to_goal(
-            robot_position, self.goal_position)
-        angle_to_goal = Utils.get_angle_to_goal(
-            robot_position, robot_orientation, self.goal_position)
-
-        max_lidar_range = 30.0
-        normalized_lidar_ranges = laser_ranges[agent_index] / max_lidar_range
-        normalized_lidar_ranges = np.clip(
-            normalized_lidar_ranges, 0.0, 1.0)
-        normalized_dist_to_goal = distance_to_goal / max_distance_to_goal
-        normalized_angle_to_goal = angle_to_goal / np.pi
-
-        # observation = (lidar ranges, relative params of target, last action)
-        # observation = tuple(normalized_lidar_ranges) + (
-        #     normalized_dist_to_goal, normalized_angle_to_goal) + tuple(self.last_actions.get(agent_index))
-
-        # print("last action")
-        # print(self.last_actions.get(agent_index))
-
-        state_parameter_set = np.concatenate(
-            [[normalized_dist_to_goal, normalized_angle_to_goal],
-             [self.last_actions.get(agent_index)[0],
-             self.last_actions.get(agent_index)[1]]]
-        )
-        observation = Observation(
-            lidar=normalized_lidar_ranges, state_params=state_parameter_set)
-
-        return observation
-
-    def get_robot_position(self, agent_index):
-        global odom_data
-        return Utils.get_position_from_odom_data(odom_data[agent_index])
-
-    def check_done(self, agent_index):
-        global odom_data
-        global laser_ranges
-
-        if Utils.get_distance_to_goal((odom_data[agent_index].pose.pose.position.x, odom_data[agent_index].pose.pose.position.y), self.goal_position) < GOAL_REACHED_THRESHOLD:
-            self.node.get_logger().info(
-                f"Goal reached. Distance to goal: {Utils.get_distance_to_goal((odom_data[agent_index].pose.pose.position.x, odom_data[agent_index].pose.pose.position.y), self.goal_position)}")
-            return True
-
-        if min(laser_ranges[agent_index]) < OBSTACLE_COLLISION_THRESHOLD:
-            self.node.get_logger().info(
-                f"Collision detected. minRange: {min(laser_ranges[agent_index])}")
-            return True
-
-        return False
-
-    def get_reward(self, done, agent_index: int):
-        global odom_data
-        global laser_ranges
-
-        r_arrive = 200
-        r_collision = -200
-        k = 500
-
-        distance_to_goal = Utils.get_distance_to_goal(
-            (odom_data[agent_index].pose.pose.position.x, odom_data[agent_index].pose.pose.position.y), self.goal_position)
-
-        reached_goal = distance_to_goal < GOAL_REACHED_THRESHOLD
-        collision = min(laser_ranges[agent_index]
-                        ) < OBSTACLE_COLLISION_THRESHOLD
-
-        if done:
-            if reached_goal:
-                return r_arrive
-            if collision:
-                return r_collision
-
-        total_aproach_reward = 0
-        for i, _ in enumerate(odom_data):
-            current_distance_to_goal = Utils.get_distance_to_goal(
-                self.get_robot_position(i), self.goal_position)
-
-            approach_dist = self.prev_distances_to_goal[i] - \
-                current_distance_to_goal
-            approach_dist *= k
-
-            self.prev_distances_to_goal[i] = current_distance_to_goal
-
-            total_aproach_reward += approach_dist
-
-        return total_aproach_reward
-
-    def close(self):
-        self.node.destroy_node()
+        return observations
 
 
 # small_world.sdf
@@ -295,7 +144,26 @@ goal_position = (-8.061270, 1.007540)
 
 rclpy.init()
 
-env = GazeboEnv(goal_position)
+goal_position = (-8.061270, 1.007540)
+
+namespaces = [f"robot_{i+1}" for i in range(AGENT_COUNT)]
+
+# set up subscribers and environment
+executor = MultiThreadedExecutor()
+odom_subscribers = []
+scan_subscribers = []
+for i, namespace in enumerate(namespaces):
+    robot_index = i
+    odom_subscriber = OdomSubscriber(namespace, robot_index)
+    scan_subscriber = ScanSubscriber(namespace, robot_index)
+    odom_subscribers.append(odom_subscriber)
+    scan_subscribers.append(scan_subscriber)
+    executor.add_node(odom_subscriber)
+    executor.add_node(scan_subscriber)
+
+env = GazeboEnv(odom_subscribers=odom_subscribers,
+                scan_subscribers=scan_subscribers, goal_position=goal_position)
+
 
 num_states = env.observation_space.shape[0]
 print("Size of State Space ->  {}".format(num_states))
@@ -401,7 +269,7 @@ class Buffer:
     #     reward_batch,
     #     next_state_batch,
     # ):
-    # @ tf.function
+    @ tf.function
     def update(
         self,
         lidar_batch, state_params_batch,
@@ -454,12 +322,12 @@ class Buffer:
             zip(actor_grad, actor_model.trainable_variables)
         )
 
-        print(
-            f"Max of actor_grad[0]: {tf.reduce_max(tf.get_static_value(actor_grad)[-1]  ):.20f}")
-        print(
-            f"Min of actor_grad[0]: {tf.reduce_min(tf.get_static_value(actor_grad)[-1]):.20f}")
-        print(
-            f"Mean of actor_grad[0]: {tf.reduce_mean(tf.get_static_value(actor_grad)[-1]):.20f}")
+        # print(
+        #     f"Max of actor_grad[0]: {tf.reduce_max(tf.get_static_value(actor_grad)[-1]  ):.20f}")
+        # print(
+        #     f"Min of actor_grad[0]: {tf.reduce_min(tf.get_static_value(actor_grad)[-1]):.20f}")
+        # print(
+        #     f"Mean of actor_grad[0]: {tf.reduce_mean(tf.get_static_value(actor_grad)[-1]):.20f}")
         # print("Max of actor_grad[0]: %.4f" % tf.reduce_max(actor_grad[0]))
         # print("Min of actor_grad[0]: %.4f" % tf.reduce_min(actor_grad[0]))
 
@@ -679,8 +547,6 @@ if __name__ == "__main__":
     # rclpy.init()
     # small_world.sdf
     goal_position = (-8.061270, 1.007540)
-    namespaces = ["robot_1", "robot_2", "robot_3"]
-    namespaces = ["robot_1"]
 
     std_dev = 0.2
     ou_noise = OUActionNoise(mean=np.zeros(
@@ -691,14 +557,6 @@ if __name__ == "__main__":
 
     target_actor = get_actor()
     target_critic = get_critic()
-
-    actor_model.summary()
-    critic_model.summary()
-
-    # keras.utils.plot_model(actor_model, show_shapes=True,
-    #                        show_layer_activations=True, to_file="actor_model.png")
-    # keras.utils.plot_model(critic_model, show_shapes=True,
-    #                        show_layer_activations=True, to_file="critic_model.png")
 
     checkpoint_dir = os.path.join('.', 'updated_ddpg')
 
@@ -727,20 +585,20 @@ if __name__ == "__main__":
     critic_optimizer = keras.optimizers.Adam(critic_lr)
     actor_optimizer = keras.optimizers.Adam(actor_lr)
 
-    actor_model.compile(
-        optimizer=actor_optimizer,
-        loss="mse",
-        run_eagerly=True,
-    )
-    critic_model.compile(
-        optimizer=critic_optimizer,
-        loss="mse",
-        run_eagerly=True,
-    )
+    # actor_model.compile(
+    #     optimizer=actor_optimizer,
+    #     loss="mse",
+    #     run_eagerly=True,
+    # )
+    # critic_model.compile(
+    #     optimizer=critic_optimizer,
+    #     loss="mse",
+    #     run_eagerly=True,
+    # )
 
     # try this
-    # critic_optimizer = keras.optimizers.Adam(critic_lr, clipnorm=1.0)
-    # actor_optimizer = keras.optimizers.Adam(actor_lr, clipnorm=1.0)
+    critic_optimizer = keras.optimizers.Adam(critic_lr,  clipvalue=.5)
+    actor_optimizer = keras.optimizers.Adam(actor_lr, clipvalue=.5)
 
     total_episodes = 10_000
     # Discount factor for future rewards
@@ -761,55 +619,50 @@ if __name__ == "__main__":
     # To store average reward history of last few episodes
     avg_reward_list = []
 
-    namespaces = ["robot_1", "robot_2", "robot_3"]
-    namespaces = ["robot_1"]
-    executor = MultiThreadedExecutor()
-    for i, namespace in enumerate(namespaces):
-        robot_index = i
-        odom_subscriber = OdomSubscriber(namespace, robot_index)
-        scan_subscriber = ScanSubscriber(namespace, robot_index)
-
-        executor.add_node(odom_subscriber)
-        executor.add_node(scan_subscriber)
-        executor.add_node(env.node)
-
     executor_thread = threading.Thread(target=executor.spin, daemon=False)
     executor_thread.start()
 
     for ep in range(total_episodes):
         agent_index = 0
-        prev_state, _ = env.reset()
+        prev_state_n = env.reset()
         episodic_reward = 0
         step = 1
 
-        print("prev_state: ", prev_state)
-
-        # prev_state ve state: [laser_ranges[agent_index], state_parameter_set]
+        print("prev_state_n: ", prev_state_n)
 
         while step < max_steps:
             # tf_prev_state = keras.ops.expand_dims(
             #     keras.ops.convert_to_tensor(prev_state), 0
             # )
 
-            lidar_obs = prev_state.lidar
-            state_parameter_set_obs = prev_state.state_params
+            action_n = []
 
-            tf_lidar_obs = keras.ops.expand_dims(
-                keras.ops.convert_to_tensor(lidar_obs), 0
-            )
-            tf_state_param_set = keras.ops.expand_dims(
-                keras.ops.convert_to_tensor(state_parameter_set_obs), 0
-            )
+            for prev_state in prev_state_n:
+                lidar_obs = prev_state.lidar
+                state_parameter_set_obs = prev_state.state_params
 
-            # policy'ye [lidar_input, state_input]
+                tf_lidar_obs = keras.ops.expand_dims(
+                    keras.ops.convert_to_tensor(lidar_obs), 0
+                )
+                tf_state_param_set = keras.ops.expand_dims(
+                    keras.ops.convert_to_tensor(state_parameter_set_obs), 0
+                )
 
-            action = policy([tf_lidar_obs, tf_state_param_set], ou_noise)
+                action = policy([tf_lidar_obs, tf_state_param_set], ou_noise)
+                action_n .append(action)
+
             # Receive state and reward from environment.
 
-            state, reward, done, truncated, _ = env.step(action, agent_index)
+            state_n, reward_n, done_n, _ = env.step(action_n)
 
-            buffer.record((prev_state, action, reward, state))
-            episodic_reward += reward
+            for i, r in enumerate(reward_n):
+                print(f"Reward for agent_{i}: {r}")
+
+            for i in range(len(state_n)):
+                buffer.record(
+                    (prev_state_n[i],  action_n[i], reward_n[i], state_n[i])
+                )
+                episodic_reward += reward_n[i]
 
             buffer.learn()
 
@@ -817,10 +670,10 @@ if __name__ == "__main__":
             update_target(target_critic, critic_model, tau)
 
             # End this episode when `done` or `truncated` is True
-            if done or truncated:
+            if any(done_n):
                 break
 
-            prev_state = state
+            prev_state_n = state_n
             # print(f"Episode: {ep+1} - Step: {step} - Reward: {reward}")
             step += 1
 
