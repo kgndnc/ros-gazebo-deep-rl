@@ -35,15 +35,15 @@
         <box size="0.6 0.4 0.2"/>
       </geometry>
       <origin rpy="0 0 0" xyz="0 0 0.1"/>
+
       <surface>
         <contact>
-          <!-- 001 -->
+
           <!-- 010 -->
           <!-- 100 -->
-          <collide_without_contact>true</collide_without_contact>
-
-          <collide_bitmask>1</collide_bitmask>
-
+          <!-- 001 -->
+          <ode />
+          <collide_without_contact_bitmask>0x01</collide_without_contact_bitmask>
         </contact>
       </surface>
     </collision>
@@ -220,7 +220,7 @@
     <material>Gazebo/Red</material>
     <sensor name="laser" type="ray">
       <pose> 0 0 0 0 0 0 </pose>
-      <visualize>0</visualize>
+      <visualize>1</visualize>
       <update_rate>100</update_rate>
       <!-- <update_rate>1000</update_rate> -->
       <always_on>1</always_on>

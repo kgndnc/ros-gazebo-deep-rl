@@ -37,7 +37,8 @@
       <origin rpy="0 0 0" xyz="0 0 0.1"/>
       <surface>
         <contact>
-          <collide_without_contact>true</collide_without_contact>
+          <ode />
+          <collide_without_contact_bitmask>0x02</collide_without_contact_bitmask>
         </contact>
       </surface>
     </collision>

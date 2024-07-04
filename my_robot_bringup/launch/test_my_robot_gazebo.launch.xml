@@ -33,7 +33,7 @@
   <!-- Gazebo launch file -->
   <!--  ros2 launch gazebo_ros gazebo.launch.py -->
   <include file="$(find-pkg-share gazebo_ros)/launch/gazebo.launch.py">
-    <arg name="world" value="$(find-pkg-share my_robot_bringup)/worlds/simple_world_w_obs.sdf" />
+    <arg name="world" value="$(find-pkg-share my_robot_bringup)/worlds/simple_world_w_obs.world" />
     <arg name="use_sim_time" value="true"/>
   </include>
 

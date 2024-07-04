@@ -11,9 +11,10 @@ from Utils import Utils
 import math
 from std_srvs.srv import Empty
 from geometry_msgs.msg import Twist
-from gazebo_msgs.srv import SpawnEntity, DeleteEntity, SetEntityState, GetEntityState
+from gazebo_msgs.srv import SpawnEntity, DeleteEntity, SetEntityState, GetEntityState, SetModelState, SetModelConfiguration, SetLinkState, SetLinkProperties, SetPhysicsProperties
 from subscribers import OdomSubscriber, ScanSubscriber
-from config import GOAL_REACHED_THRESHOLD, OBSTACLE_COLLISION_THRESHOLD, LIDAR_SAMPLE_SIZE, SAVE_INTERVAL, AGENT_COUNT, MAX_LIDAR_RANGE
+from config import GOAL_REACHED_THRESHOLD, OBSTACLE_COLLISION_THRESHOLD, LIDAR_SAMPLE_SIZE, SAVE_INTERVAL, AGENT_COUNT, MAX_LIDAR_RANGE, RTF
+
 
 # (done, collision, target, min_laser_reading)
 DoneTuple = namedtuple(
@@ -36,11 +37,12 @@ agent_count = AGENT_COUNT
 
 class GazeboEnvMultiAgent(Env):
 
-    def __init__(self, odom_subscribers: List[OdomSubscriber], scan_subscribers: List[ScanSubscriber], goal_position=(0., 0.)):
+    def __init__(self, odom_subscribers: List[OdomSubscriber], scan_subscribers: List[ScanSubscriber], goal_position=(0., 0.), test=False):
         super(GazeboEnvMultiAgent, self).__init__()
 
         self.odom_subscribers = odom_subscribers
         self.scan_subscribers = scan_subscribers
+        self.test = test
 
         # Define action space
         # action (linear_x velocity, angular_z velocity)
@@ -94,6 +96,27 @@ class GazeboEnvMultiAgent(Env):
                       (-1.097499, 11.650926), (-8.499418, -9.187337),
                       (-1.944295, -8.582796), (-4.369452, 1.338763)]
 
+    def raise_robot_model(self, robot_index: int):
+
+        msg = SetLinkProperties.Request()
+        msg.link_name = "my_robot_1::base_footprint"
+        msg.gravity_mode = False
+
+        model_name: str = f"my_robot_{robot_index+1}"
+        print(f"Raising {model_name}")
+        request = SetEntityState.Request()
+        request.state.name = model_name
+
+        request.state.pose.position.z = -2.0
+
+        while not self.set_entity_state.wait_for_service(timeout_sec=1.0):
+            self.node.get_logger().info(
+                "Waiting for set entity state service to be available")
+        try:
+            self.set_entity_state.call_async(request)
+        except:
+            self.node.get_logger().error("/gazebo/set_entity_state service call failed!")
+
     def change_goal_position(self):
 
         # TODO: make this dynamic
@@ -120,7 +143,7 @@ class GazeboEnvMultiAgent(Env):
         except:
             self.node.get_logger().error("/gazebo/set_entity_state service call failed!")
 
-    def step(self, action_n: List, test=False):
+    def step(self, action_n: List):
 
         cmds = []
 
@@ -141,7 +164,7 @@ class GazeboEnvMultiAgent(Env):
 
         self.unpause_physics()
 
-        time.sleep(0.2)
+        time.sleep(0.2 / RTF)
 
         self.pause_physics()
 
@@ -150,13 +173,6 @@ class GazeboEnvMultiAgent(Env):
 
         # (done_n, collision_n, target_n, min_laser_readings)
         terminated, collision, target, min_laser_readings = self.check_done()
-
-        if not test:
-            if any(target):
-                self.change_goal_position()
-        else:
-            if all(target):
-                self.change_goal_position()
 
         reward = self.get_reward(
             terminated, collision, target, action_n, min_laser_readings)
@@ -196,7 +212,9 @@ class GazeboEnvMultiAgent(Env):
         # set bookshelf position
         # self.set_goal_position()
 
-        time.sleep(0.1)
+        time.sleep(0.1 / RTF)
+
+        self.change_goal_position()
 
         observations = self.get_obs()
 

@@ -1,4 +1,3 @@
-from replay_buffer import ReplayBuffer
 from torch.utils.tensorboard import SummaryWriter
 from numpy import inf
 import torch.nn.functional as F
@@ -6,7 +5,6 @@ import torch.nn as nn
 import torch
 import numpy as np
 import sys
-import os
 from rclpy.executors import MultiThreadedExecutor
 import rclpy
 import threading
@@ -273,8 +271,8 @@ if __name__ == "__main__":
         executor.add_node(odom_subscriber)
         executor.add_node(scan_subscriber)
 
-    env = GazeboEnvMultiAgent(odom_subscribers=odom_subscribers,
-                              scan_subscribers=scan_subscribers, goal_position=goal_position)
+    env = GazeboEnvMultiAgent(odom_subscribers=odom_subscribers, scan_subscribers=scan_subscribers,
+                              goal_position=goal_position, test=True)
     executor.add_node(env.node)
 
     # TODO: ros sleep node
@@ -293,13 +291,12 @@ if __name__ == "__main__":
 
     print('Starting test...')
 
-    # TODO: if goal is reached stop agent
-
     # test loop:
     while rclpy.ok():
         if done:
             prev_observation_n = env.reset()
             done = False
+            episode_timesteps = 0
 
             # get actions
             action_n = []
@@ -313,19 +310,17 @@ if __name__ == "__main__":
                 a_in = [(action[0] + 1) / 2, action[1]]
                 a_in_n.append(a_in)
 
-            observation, reward, done_n, info = env.step(a_in_n, test=True)
+            observation, reward, done_n, info = env.step(a_in_n)
 
             # done = False if episode_timesteps + 1 == max_ep else int(any(done_n))
 
             # check done
             if episode_timesteps + 1 == max_ep:
-                done = False
-            elif any(info.get('collision')):
-                done = False
+                done = True
+            elif all(info.get('collision')):
+                done = True
             elif all(info.get('target')):
-                done = False
-
-            episode_timesteps = 0
+                done = True
 
         else:
             # get actions
@@ -334,13 +329,23 @@ if __name__ == "__main__":
                 action = network.get_action(np.array(prev_observation_n[i]))
                 action_n.append(action)
 
+            if info:
+                collision = info.get('collision')
+                target = info.get('target')
+
             # scale actions to fit proper ranges
             a_in_n = []
             for i, action in enumerate(action_n):
                 a_in = [(action[0] + 1) / 2, action[1]]
+
+                # if target[i]:
+                #     print(f"Agent {i} reached the target. stopping it!")
+                #     a_in = [0.0, 0.0]
+                #     # env.raise_robot_model(i)
+
                 a_in_n.append(a_in)
 
-            observation, reward, done_n, info = env.step(a_in_n, test=True)
+            observation, reward, done_n, info = env.step(a_in_n)
 
             # print('info')
             # print(info)
@@ -350,11 +355,11 @@ if __name__ == "__main__":
 
             # check done
             if episode_timesteps + 1 == max_ep:
-                done = False
-            elif any(info.get('collision')):
-                done = False
+                done = True
+            elif all(info.get('collision')):
+                done = True
             elif all(info.get('target')):
-                done = False
+                done = True
 
             prev_observation_n = observation
             episode_timesteps += 1

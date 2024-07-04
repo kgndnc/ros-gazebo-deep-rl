@@ -455,8 +455,8 @@ def get_actor():
     inputs = layers.Input(shape=(num_states,))
     # out = layers.Dense(256, activation="relu")(inputs)
     # out = layers.Dense(256, activation="relu")(out)
-    out = layers.Dense(400, activation="relu")(inputs)
-    out = layers.Dense(300, activation="relu")(out)
+    out = layers.Dense(800, activation="relu")(inputs)
+    out = layers.Dense(600, activation="relu")(out)
     # outputs = layers.Dense(1, activation="tanh",
     #                        kernel_initializer=last_init)(out)
 
@@ -465,7 +465,7 @@ def get_actor():
     #                        kernel_initializer=last_init)(out)
 
     linear_output = layers.Dense(
-        1, activation='sigmoid', kernel_initializer="glorot_uniform")(out)
+        1, activation='tanh', kernel_initializer="glorot_uniform")(out)
     angular_output = layers.Dense(
         1, activation='tanh', kernel_initializer="glorot_uniform")(out)
 
@@ -483,12 +483,13 @@ def get_actor():
 def get_critic():
     # State as input
     state_input = layers.Input(shape=(num_states,))
-    state_out = layers.Dense(16, activation="relu")(state_input)
-    state_out = layers.Dense(32, activation="relu")(state_out)
+    state_out = layers.Dense(800, activation="relu")(state_input)
+    state_out = layers.Dense(600, activation="relu")(state_out)
 
     # Action as input
     action_input = layers.Input(shape=(num_actions,))
-    action_out = layers.Dense(32, activation="relu")(action_input)
+    action_out = layers.Dense(800, activation="relu")(action_input)
+    action_out = layers.Dense(600, activation="relu")(action_input)
 
     # Both are passed through separate layer before concatenating
     concat = layers.Concatenate()([state_out, action_out])
@@ -546,6 +547,11 @@ if __name__ == "__main__":
 
     target_actor = get_actor()
     target_critic = get_critic()
+
+    keras.utils.plot_model(actor_model, "actor_model.png",
+                           show_shapes=True, show_layer_activations=True, show_layer_names=True)
+    keras.utils.plot_model(critic_model, "critic_model.png",
+                           show_shapes=True, show_layer_activations=True,  show_layer_names=True)
 
     checkpoint_dir = os.path.join('.', 'ddpg')
 
