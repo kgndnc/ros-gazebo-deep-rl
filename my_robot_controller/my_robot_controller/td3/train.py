@@ -14,6 +14,8 @@ import threading
 sys.path.append("../environment")  # nopep8
 
 from config import *
+from config import _MAX_EP, _EVAL_EP, _MAX_TIMESTEPS, _EXPL_NOISE, _EXPL_DECAY_STEPS,  _EXPL_MIN, _BATCH_SIZE, _DISCOUNT, _TAU, _POLICY_NOISE, _NOISE_CLIP, _POLICY_FREQ, _BUFFER_SIZE, _EVAL_FREQ
+
 from GazeboEnv import GazeboEnvMultiAgent
 from subscribers import OdomSubscriber, ScanSubscriber
 
@@ -279,29 +281,9 @@ if __name__ == "__main__":
     rclpy.init()
 
     seed = 0  # Random seed number
-    eval_freq = 5e3  # After how many steps to perform the evaluation
-    max_ep = 500  # maximum number of steps per episode
-    eval_ep = 10  # number of episodes for evaluation
-    max_timesteps = 5e6  # Maximum number of steps to perform
-    # Initial exploration noise starting value in range [expl_min ... 1]
-    expl_noise = 1
-    expl_decay_steps = (
-        500000  # Number of steps over which the initial exploration noise will decay over
-    )
-    # Exploration noise after the decay in range [0...expl_noise]
-    expl_min = 0.1
-    batch_size = 40  # Size of the mini-batch
-    # Discount factor to calculate the discounted future reward (should be close to 1)
-    discount = 0.99999
-    tau = 0.005  # Soft target update variable (should be close to 0)
-    policy_noise = 0.2  # Added noise for exploration
-    noise_clip = 0.5  # Maximum clamping values of the noise
-    policy_freq = 2  # Frequency of Actor network updates
-    buffer_size = 1e6  # Maximum size of the buffer
     file_name = "td3_policy"  # name of the file to store the policy
-    save_model = True  # Whether to save the model or not
+    save_model = False  # Whether to save the model or not
     load_model = True  # Whether to load a stored model
-    random_near_obstacle = True  # To take random actions near obstacles or not
 
     # Create the network storage folders
     if not os.path.exists("./results"):
@@ -323,7 +305,7 @@ if __name__ == "__main__":
     # Create the network
     network = TD3(state_dim, action_dim, max_action)
     # Create a replay buffer
-    replay_buffer = ReplayBuffer(buffer_size, seed)
+    replay_buffer = ReplayBuffer(_BUFFER_SIZE, seed)
     if load_model:
         try:
             print("Will load existing model.")
@@ -397,7 +379,7 @@ if __name__ == "__main__":
     print('Starting iterations...')
 
     # training loop:
-    while timestep < max_timesteps:
+    while timestep < _MAX_TIMESTEPS:
         if done:
             env.node.get_logger().info(
                 f"Done. Episode num: {episode_num} - Total episode rewards: {episode_reward} ")
@@ -405,19 +387,19 @@ if __name__ == "__main__":
                 env.node.get_logger().info(f"Training network")
                 network.train(replay_buffer,
                               episode_timesteps,
-                              batch_size,
-                              discount,
-                              tau,
-                              policy_noise,
-                              noise_clip,
-                              policy_freq,
+                              _BATCH_SIZE,
+                              _DISCOUNT,
+                              _TAU,
+                              _POLICY_NOISE,
+                              _NOISE_CLIP,
+                              _POLICY_FREQ,
                               )
-                if timesteps_since_eval >= eval_freq:
+                if timesteps_since_eval >= _EVAL_FREQ:
                     env.node.get_logger().info("Validating")
-                    timesteps_since_eval %= eval_freq
+                    timesteps_since_eval %= _EVAL_FREQ
                     evaluations.append(
                         evaluate(network=network, epoch=epoch,
-                                 eval_episodes=eval_ep)
+                                 eval_episodes=_EVAL_EP)
                     )
                     if save_model:
                         network.save(
@@ -435,14 +417,14 @@ if __name__ == "__main__":
 
              # add some exploration noise
 
-        if expl_noise > expl_min:
-            expl_noise = expl_noise - ((1 - expl_min) / expl_decay_steps)
+        if _EXPL_NOISE > _EXPL_MIN:
+            _EXPL_NOISE = _EXPL_NOISE - ((1 - _EXPL_MIN) / _EXPL_DECAY_STEPS)
 
         # get actions
         action_n = []
         for i in range(AGENT_COUNT):
             action = network.get_action(np.array(prev_observation_n[i]))
-            action = (action + np.random.normal(0, expl_noise, size=action_dim)).clip(
+            action = (action + np.random.normal(0, _EXPL_NOISE, size=action_dim)).clip(
                 -max_action, max_action
             )
             action_n.append(action)
@@ -461,8 +443,8 @@ if __name__ == "__main__":
             just_reset = False
 
         done_bool = 0 if episode_timesteps + \
-            1 == max_ep else int(any(done_n))
-        done = 1 if episode_timesteps + 1 == max_ep else int(any(done_n))
+            1 == _MAX_EP else int(any(done_n))
+        done = 1 if episode_timesteps + 1 == _MAX_EP else int(any(done_n))
 
         for i, r in enumerate(reward):
             episode_reward += r
