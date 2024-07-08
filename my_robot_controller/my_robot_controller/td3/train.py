@@ -282,8 +282,8 @@ if __name__ == "__main__":
 
     seed = 0  # Random seed number
     file_name = "td3_policy"  # name of the file to store the policy
-    save_model = False  # Whether to save the model or not
-    load_model = True  # Whether to load a stored model
+    save_model = False  # save the model or not
+    load_model = True  # load a stored model
 
     # Create the network storage folders
     if not os.path.exists("./results"):
